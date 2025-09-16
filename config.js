@@ -60,7 +60,7 @@ const spotify = {
     // Future playlist support
     temp: {
       id: getEnv('SPOTIFY_TEMP_PLAYLIST_ID'),
-      type: 'Temp'
+      type: 'Score'
     }
   }
 };
@@ -85,7 +85,7 @@ const appleMusic = {
     },
     temp: {
       id: getEnv('APPLE_MUSIC_TEMP_PLAYLIST_ID'),
-      type: 'Temp'
+      type: 'Score'
     }
   }
 };

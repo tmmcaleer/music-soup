@@ -289,13 +289,13 @@ async function processTrackData(track, playlistId) {
   // Playlist information - will be set by orchestrator
   trackData.type = 'Source'; // Default, will be overridden by orchestrator
   
-  // Get playlist name for reference
+  // Get playlist name for reference with service prefix
   try {
     const playlist = await getPlaylist(playlistId);
-    trackData.playlist = playlist.name;
+    trackData.playlist = `Spotify - ${playlist.name}`;
   } catch (error) {
     logger.warn(`Could not get playlist name for ${playlistId}, using ID`, error);
-    trackData.playlist = playlistId;
+    trackData.playlist = `Spotify - ${playlistId}`;
   }
 
   // Log metadata gaps
