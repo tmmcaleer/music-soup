@@ -109,6 +109,7 @@ async function main() {
       
       console.log('\n📊 Spotify Sync Results:');
       console.log(`   New tracks added: ${results.added}`);
+      console.log(`   Tracks skipped (preserving edits): ${results.skipped}`);
       console.log(`   Tracks updated: ${results.updated}`);
       console.log(`   Errors: ${results.errors}`);
 
@@ -119,6 +120,7 @@ async function main() {
       
       console.log('\n📊 Apple Music Sync Results:');
       console.log(`   New tracks added: ${results.added}`);
+      console.log(`   Tracks skipped (preserving edits): ${results.skipped}`);
       console.log(`   Tracks updated: ${results.updated}`);
       console.log(`   Errors: ${results.errors}`);
 
@@ -133,11 +135,13 @@ async function main() {
       console.log('');
       console.log('🎧 Spotify:');
       console.log(`   New tracks: ${results.sync.spotify.added}`);
+      console.log(`   Skipped: ${results.sync.spotify.skipped}`);
       console.log(`   Updated: ${results.sync.spotify.updated}`);
       console.log(`   Errors: ${results.sync.spotify.errors}`);
       console.log('');
       console.log('🍎 Apple Music:');
       console.log(`   New tracks: ${results.sync.appleMusic.added}`);
+      console.log(`   Skipped: ${results.sync.appleMusic.skipped}`);
       console.log(`   Updated: ${results.sync.appleMusic.updated}`);
       console.log(`   Errors: ${results.sync.appleMusic.errors}`);
       console.log('');

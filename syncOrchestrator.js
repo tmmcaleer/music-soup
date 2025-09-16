@@ -20,9 +20,9 @@ const notionClient = require('./notionClient');
 async function syncAllPlaylists() {
   const syncStart = Date.now();
   const summary = {
-    spotify: { added: 0, updated: 0, errors: 0 },
-    appleMusic: { added: 0, updated: 0, errors: 0 },
-    total: { processed: 0, successful: 0, errors: 0 },
+    spotify: { added: 0, updated: 0, skipped: 0, errors: 0 },
+    appleMusic: { added: 0, updated: 0, skipped: 0, errors: 0 },
+    total: { processed: 0, successful: 0, skipped: 0, errors: 0 },
     duration: 0,
     errors: []
   };
@@ -61,15 +61,18 @@ async function syncAllPlaylists() {
           if (playlist.service === 'spotify') {
             summary.spotify.added += result.added;
             summary.spotify.updated += result.updated;
+            summary.spotify.skipped += result.skipped;
             summary.spotify.errors += result.errors;
           } else if (playlist.service === 'appleMusic') {
             summary.appleMusic.added += result.added;
             summary.appleMusic.updated += result.updated;
+            summary.appleMusic.skipped += result.skipped;
             summary.appleMusic.errors += result.errors;
           }
 
           summary.total.processed += result.added + result.updated;
           summary.total.successful += result.added + result.updated;
+          summary.total.skipped += result.skipped;
           summary.total.errors += result.errors;
         }
 
@@ -97,6 +100,7 @@ async function syncAllPlaylists() {
       duration: `${summary.duration}ms`,
       totalProcessed: summary.total.processed,
       totalSuccessful: summary.total.successful,
+      totalSkipped: summary.total.skipped,
       totalErrors: summary.total.errors,
       spotify: summary.spotify,
       appleMusic: summary.appleMusic
@@ -123,7 +127,7 @@ async function syncAllPlaylists() {
  * @returns {Promise<Object>} - Sync results for Spotify
  */
 async function syncSpotifyPlaylist(playlistId, playlistType = 'Source') {
-  const results = { added: 0, updated: 0, errors: 0, tracks: [] };
+  const results = { added: 0, updated: 0, skipped: 0, errors: 0, tracks: [] };
 
   try {
     // Check Spotify service health
@@ -146,9 +150,10 @@ async function syncSpotifyPlaylist(playlistId, playlistType = 'Source') {
     // Process each track
     for (const track of tracks) {
       try {
-        // Add playlist type to track data
+        // Add playlist type to track data and override the type field
         const trackWithPlaylistInfo = {
           ...track,
+          type: playlistType,
           playlistType: playlistType
         };
         
@@ -159,6 +164,8 @@ async function syncSpotifyPlaylist(playlistId, playlistType = 'Source') {
           results.added++;
         } else if (result === 'updated') {
           results.updated++;
+        } else if (result === 'skipped') {
+          results.skipped++;
         }
         
         // Add small delay to respect rate limits
@@ -179,6 +186,7 @@ async function syncSpotifyPlaylist(playlistId, playlistType = 'Source') {
       totalTracks: tracks.length,
       added: results.added,
       updated: results.updated,
+      skipped: results.skipped,
       errors: results.errors
     });
 
@@ -202,7 +210,7 @@ async function syncSpotifyPlaylist(playlistId, playlistType = 'Source') {
  * @returns {Promise<Object>} - Sync results for Apple Music
  */
 async function syncAppleMusicPlaylist(playlistId, playlistType = 'Source') {
-  const results = { added: 0, updated: 0, errors: 0, tracks: [] };
+  const results = { added: 0, updated: 0, skipped: 0, errors: 0, tracks: [] };
 
   try {
     // Check Apple Music service health
@@ -225,9 +233,10 @@ async function syncAppleMusicPlaylist(playlistId, playlistType = 'Source') {
     // Process each track
     for (const track of tracks) {
       try {
-        // Add playlist type to track data
+        // Add playlist type to track data and override the type field
         const trackWithPlaylistInfo = {
           ...track,
+          type: playlistType,
           playlistType: playlistType
         };
         
@@ -238,6 +247,8 @@ async function syncAppleMusicPlaylist(playlistId, playlistType = 'Source') {
           results.added++;
         } else if (result === 'updated') {
           results.updated++;
+        } else if (result === 'skipped') {
+          results.skipped++;
         }
         
         // Add small delay to respect rate limits
@@ -258,6 +269,7 @@ async function syncAppleMusicPlaylist(playlistId, playlistType = 'Source') {
       totalTracks: tracks.length,
       added: results.added,
       updated: results.updated,
+      skipped: results.skipped,
       errors: results.errors
     });
 
@@ -293,13 +305,13 @@ async function syncTrackToNotion(trackData) {
     }
 
     if (existingTrack) {
-      // Update existing track
-      await notionClient.updateTrack(existingTrack.id, trackData);
-      logger.debug(`Updated existing track: ${trackData.title}`, {
+      // Skip existing track to preserve manual edits
+      logger.debug(`Skipped existing track: ${trackData.title}`, {
         pageId: existingTrack.id,
-        source: trackData.source
+        source: trackData.source,
+        reason: 'Preserving manual edits'
       });
-      return 'updated';
+      return 'skipped';
     } else {
       // Create new track
       const newPage = await notionClient.createTrack(trackData);
