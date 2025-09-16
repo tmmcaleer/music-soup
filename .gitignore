@@ -11,6 +11,9 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
+# Internal documentation
+README-internal.md
+
 # Apple Music private key
 *.p8
 

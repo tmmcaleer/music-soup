@@ -1,107 +1,129 @@
-# 🎵 Music Soup - Automated Playlist Sync
+# 🎵 Music Soup
 
-**Music Soup** automatically syncs tracks from your Spotify and Apple Music playlists into a Notion database, giving you a centralized place to organize and annotate your music for film/TV projects.
+A Node.js automation that syncs Spotify and Apple Music playlists into a Notion database for music supervision and playlist management workflows.
 
-## 🎯 What This Does
+## 🎯 What It Does
 
-- **Watches your playlists**: Monitors specified Spotify and Apple Music playlists every 5 minutes
-- **Extracts metadata**: Pulls track information (title, artist, album, duration, etc.)
-- **Updates Notion**: Adds new tracks and updates existing ones in your music database
-- **Handles duplicates**: Uses ISRC codes to avoid duplicate entries across platforms
-- **Tracks removals**: Marks tracks as "removed" when they're deleted from playlists
+Music Soup automatically:
+- **Monitors playlists** from Spotify and Apple Music
+- **Extracts metadata** (title, artist, album, duration, ISRC, etc.)
+- **Syncs to Notion** with smart deduplication via ISRC codes
+- **Handles updates** when tracks are added, removed, or modified
+- **Formats data** for music supervision workflows (duration in MM:SS, release years, composer credits)
 
-## 📊 What Gets Updated in Notion
+## 🏗️ Architecture
 
-### Automatically Populated Fields
-When a track is added to your playlist, these fields are automatically filled in Notion:
+### Core Components
+- **`spotifyClient.js`** - Spotify Web API integration with OAuth refresh flow
+- **`appleMusicClient.js`** - Apple Music API integration with JWT developer tokens
+- **`notionClient.js`** - Notion API integration with smart schema mapping
+- **`syncOrchestrator.js`** - Main sync logic and deduplication handling
+- **`config.js`** - Centralized environment variable management
 
-- **Track Title** - Song name
-- **Artist** - Primary artist(s)
-- **Performed By** - Performing artist(s) 
-- **Album** - Album/release name
-- **Track Number** - Position on album
-- **Duration** - Length in MM:SS format (e.g., "3:47")
-- **Release Date** - Year of release (e.g., 2023)
-- **ISRC/UPC** - Unique identifier for deduplication
-- **URL** - Direct link to track on Spotify/Apple Music
-- **Playlist** - Source playlist name
-- **Type** - Source/Temp classification
-- **Composer** - Songwriter credits (when available from Apple Music)
+### API Clients
+Each API client is independently testable with comprehensive error handling:
+- **Rate limiting** with exponential backoff
+- **Token management** (OAuth refresh for Spotify, JWT generation for Apple Music)
+- **Metadata normalization** across different service schemas
+- **Graceful degradation** when services are unavailable
 
-### Manual Fields (Your Input)
-These fields are left blank for your team to fill in:
+## 🔧 Key Features
 
-- **Record Date** - Custom dating for your project
-- **Themes** - Thematic tags
-- **Mood/Keywords** - Descriptive tags for music supervision
-- **Instruments** - Instrumentation notes
-- **Notes** - General comments and collaboration notes
+### Smart Deduplication
+Uses ISRC (International Standard Recording Code) as primary key for matching tracks across platforms, with title/artist fallback for tracks without ISRC data.
 
-## ⚡ How It Works
+### Metadata Enrichment
+- **Spotify**: Track info, popularity scores, external URLs
+- **Apple Music**: Enhanced composer credits, detailed genre information
+- **Cross-platform**: Combines best metadata from both sources
 
-1. **Add music** to your Spotify or Apple Music playlists
-2. **Wait 5 minutes** (or less) for automatic sync
-3. **Check Notion** - new tracks appear with all metadata filled in
-4. **Add your notes** in the manual fields for music supervision workflow
+### Robust Error Handling
+- **API failures**: Retry logic with exponential backoff
+- **Rate limits**: Automatic throttling and queue management
+- **Partial failures**: Continue sync even if one service fails
+- **Schema mismatches**: Graceful handling of missing/changed Notion properties
 
-## 🔧 Manual Sync (When You Can't Wait)
+### Automated Cleanup
+Tracks removed from playlists are marked as "removed" in Notion rather than deleted, preserving historical data for music supervision workflows.
 
-If you want to sync immediately instead of waiting for the automatic run:
+## 🚀 Deployment
 
-1. Go to [GitHub Actions](https://github.com/tmmcaleer/music-soup/actions)
-2. Click on **"Music Soup Sync"**
-3. Click the **"Run workflow"** button (top right)
-4. Click **"Run workflow"** in the popup
-5. Wait ~1-2 minutes for completion
+### GitHub Actions
+- **Scheduled sync**: Configurable cron schedule (default: every 5 minutes)
+- **Manual triggers**: On-demand sync via GitHub UI
+- **Webhook support**: Integration with external systems via repository dispatch
+- **Secure secrets**: All API credentials stored in GitHub Secrets
 
-## 📋 Checking Sync Logs
+### Environment Configuration
+All sensitive configuration managed through environment variables:
+- Spotify OAuth credentials and refresh tokens
+- Apple Music developer certificates and user tokens  
+- Notion integration keys and database IDs
 
-To see what happened during a sync (useful for troubleshooting):
+## 📊 Notion Schema
 
-1. Go to [GitHub Actions](https://github.com/tmmcaleer/music-soup/actions)
-2. Click on any **"Music Soup Sync"** run
-3. Click **"sync-playlists"** to expand the job
-4. Click **"Run playlist sync"** to see detailed logs
+### Automated Fields
+- Track metadata (title, artist, album, duration, release date)
+- Platform URLs and unique identifiers
+- Playlist classification and source tracking
 
-### What to Look For in Logs:
-- ✅ **"Spotify sync completed"** - Shows tracks added/updated
-- ✅ **"Apple Music sync completed"** - Shows tracks added/updated  
-- ✅ **"Sync completed successfully!"** - Everything worked
-- ❌ **Red errors** - Something went wrong (contact Tim)
+### Manual Fields  
+- Custom tagging (themes, moods, instruments)
+- Editorial notes and collaboration comments
+- Project-specific metadata (record dates, etc.)
 
-## 🎵 Current Setup
+## 🛡️ Security & Best Practices
 
-- **Spotify Playlist**: "Test Playlist" - automatically synced
-- **Apple Music Playlist**: "Test Playlist" - automatically synced
-- **Sync Frequency**: Every 5 minutes, 24/7
-- **Notion Database**: "Music Options" - automatically updated
+### API Safety
+- **No hardcoded credentials** - all secrets via environment variables
+- **Endpoint validation** - all API calls verified against official documentation
+- **Schema safety** - Notion field mapping explicitly defined
+- **Rate limit compliance** - respects platform API limits
 
-## 🚨 Troubleshooting
+### Code Organization
+- **Modular design** - each API client completely independent
+- **Comprehensive logging** - structured logging with multiple levels
+- **Error boundaries** - failures isolated to prevent cascade issues
+- **Type safety** - JSDoc annotations for better IDE support
 
-### No New Tracks Appearing?
-1. Check that tracks were actually added to the correct playlists
-2. Wait 5-10 minutes for the next automatic sync
-3. Check [GitHub Actions logs](https://github.com/tmmcaleer/music-soup/actions) for errors
-4. Try a manual sync
+## 🧪 Testing
 
-### Duplicate Tracks?
-- The system uses ISRC codes to prevent duplicates
-- If you see duplicates, they might be different versions/remixes
-- Check the ISRC/UPC field to confirm
+### Integration Tests
+- **API connectivity** validation for each service
+- **Authentication flow** testing (OAuth, JWT, API keys)
+- **Schema validation** for Notion database structure
+- **Error scenario** testing (network failures, rate limits, etc.)
 
-### Missing Information?
-- Some metadata might not be available from streaming services
-- Composer info is more complete from Apple Music than Spotify
-- You can always fill in missing details manually
+### Local Development
+- **Mock responses** for API testing without hitting rate limits
+- **Environment validation** to catch configuration issues early
+- **Debug utilities** for troubleshooting API responses
 
-## 📞 Support
+## 📋 Requirements
 
-For technical issues or setup changes, contact Tim. Include:
-- What you were trying to do
-- What happened instead
-- Link to the GitHub Actions run (if applicable)
+### APIs
+- **Spotify Web API** - Client credentials and user authorization
+- **Apple Music API** - Developer program membership and user tokens
+- **Notion API** - Integration token and database access
+
+### Runtime
+- **Node.js 18+** 
+- **Dependencies**: JWT handling, HTTP clients, logging utilities
+- **Environment**: GitHub Actions or any Node.js runtime environment
+
+## 🎵 Use Cases
+
+### Music Supervision
+- **Playlist management** for film/TV projects
+- **Metadata tracking** across multiple streaming platforms  
+- **Collaboration tools** with editorial notes and tagging
+- **Historical tracking** of playlist changes over time
+
+### Music Discovery
+- **Cross-platform sync** to maintain playlists on multiple services
+- **Metadata enrichment** by combining data from different sources
+- **Automated backup** of playlist contents to prevent data loss
 
 ---
 
-**Last Updated**: September 2025  
-**Status**: ✅ Active and Running
+**Built for music industry workflows with enterprise-grade reliability and security.**
