@@ -29,6 +29,15 @@ jobs:
     - name: Install dependencies
       run: npm ci
       
+    - name: Debug Apple Music key format
+      env:
+        APPLE_MUSIC_PRIVATE_KEY: ${{ secrets.APPLE_MUSIC_PRIVATE_KEY }}
+        APPLE_MUSIC_KEY_ID: ${{ secrets.APPLE_MUSIC_KEY_ID }}
+        APPLE_MUSIC_TEAM_ID: ${{ secrets.APPLE_MUSIC_TEAM_ID }}
+      run: |
+        echo "🔍 Debugging Apple Music private key..."
+        node debug-apple-key.js
+        
     - name: Run playlist sync
       env:
         # Notion Configuration
