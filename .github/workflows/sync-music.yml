@@ -1,0 +1,66 @@
+name: Music Soup Sync
+
+on:
+  # Manual trigger from GitHub UI
+  workflow_dispatch:
+  
+  # Webhook trigger from Notion button
+  repository_dispatch:
+    types: [notion-sync]
+  
+  # Optional: Scheduled sync (daily at 9 AM)
+  schedule:
+    - cron: '0 9 * * *'
+
+jobs:
+  sync-playlists:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run playlist sync
+      env:
+        # Notion Configuration
+        NOTION_KEY: ${{ secrets.NOTION_KEY }}
+        NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
+        
+        # Spotify Configuration  
+        SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+        SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+        SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+        SPOTIFY_PLAYLIST_ID: ${{ secrets.SPOTIFY_PLAYLIST_ID }}
+        SPOTIFY_PLAYLIST_TYPE: ${{ secrets.SPOTIFY_PLAYLIST_TYPE }}
+        
+        # Apple Music Configuration
+        APPLE_MUSIC_TEAM_ID: ${{ secrets.APPLE_MUSIC_TEAM_ID }}
+        APPLE_MUSIC_KEY_ID: ${{ secrets.APPLE_MUSIC_KEY_ID }}
+        APPLE_MUSIC_PRIVATE_KEY: ${{ secrets.APPLE_MUSIC_PRIVATE_KEY }}
+        APPLE_MUSIC_USER_TOKEN: ${{ secrets.APPLE_MUSIC_USER_TOKEN }}
+        APPLE_MUSIC_PLAYLIST_ID: ${{ secrets.APPLE_MUSIC_PLAYLIST_ID }}
+        APPLE_MUSIC_PLAYLIST_TYPE: ${{ secrets.APPLE_MUSIC_PLAYLIST_TYPE }}
+        APPLE_MUSIC_STOREFRONT: ${{ secrets.APPLE_MUSIC_STOREFRONT }}
+        
+        # General Configuration
+        SYNC_INTERVAL_MINUTES: 5
+        LOG_LEVEL: info
+        DRY_RUN: false
+      run: |
+        echo "🎵 Starting Music Soup sync..."
+        node sync.js
+        echo "✅ Sync completed successfully!"
+        
+    - name: Post sync summary
+      if: always()
+      run: |
+        echo "📊 Sync job finished with status: ${{ job.status }}"
