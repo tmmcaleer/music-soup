@@ -1,6 +1,6 @@
 # 🎵 Music Soup
 
-A Node.js automation that syncs Spotify and Apple Music playlists into a Notion database for music supervision and playlist management workflows.
+A Node.js automation that syncs Spotify and Apple Music playlists into a Notion database, designed and built formusic supervision and playlist management workflows in a film/tv context but could work in others!
 
 ## 🎯 What It Does
 
