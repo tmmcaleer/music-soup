@@ -56,11 +56,11 @@ const spotify = {
 
 // Apple Music Configuration
 const appleMusic = {
-  teamId: requireEnv('APPLE_MUSIC_TEAM_ID'),
-  keyId: requireEnv('APPLE_MUSIC_KEY_ID'),
-  privateKey: requireEnv('APPLE_MUSIC_PRIVATE_KEY'),
-  userToken: requireEnv('APPLE_MUSIC_USER_TOKEN'),
-  playlistId: requireEnv('APPLE_MUSIC_PLAYLIST_ID'),
+  teamId: getEnv('APPLE_MUSIC_TEAM_ID'),
+  keyId: getEnv('APPLE_MUSIC_KEY_ID'),
+  privateKey: getEnv('APPLE_MUSIC_PRIVATE_KEY'),
+  userToken: getEnv('APPLE_MUSIC_USER_TOKEN'),
+  playlistId: getEnv('APPLE_MUSIC_PLAYLIST_ID'),
   storefront: getEnv('APPLE_MUSIC_STOREFRONT', 'us'),
 };
 

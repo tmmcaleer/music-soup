@@ -46,8 +46,9 @@ async function syncAllPlaylists() {
       logger.warn('⚠️  Skipping Spotify sync - no playlist ID configured');
     }
 
-    // Sync Apple Music playlist
-    if (config.appleMusic.playlistId && config.appleMusic.playlistId !== 'MISSING_APPLE_MUSIC_PLAYLIST_ID') {
+    // Sync Apple Music playlist (only if properly configured)
+    if (config.appleMusic.playlistId && config.appleMusic.userToken && 
+        config.appleMusic.playlistId !== 'MISSING_APPLE_MUSIC_PLAYLIST_ID') {
       logger.info('🍎 Syncing Apple Music playlist', { playlistId: config.appleMusic.playlistId });
       const appleMusicResult = await syncAppleMusicPlaylist();
       summary.appleMusic = appleMusicResult;
@@ -55,7 +56,7 @@ async function syncAllPlaylists() {
       summary.total.successful += appleMusicResult.added + appleMusicResult.updated;
       summary.total.errors += appleMusicResult.errors;
     } else {
-      logger.warn('⚠️  Skipping Apple Music sync - no playlist ID configured');
+      logger.warn('⚠️  Skipping Apple Music sync - missing configuration (userToken, playlistId, etc.)');
     }
 
     summary.duration = Date.now() - syncStart;
@@ -286,7 +287,7 @@ async function cleanupRemovedTracks() {
     // Get current playlist tracks
     const currentSpotifyTracks = config.spotify.playlistId ? 
       await spotifyClient.getPlaylistTracks(config.spotify.playlistId) : [];
-    const currentAppleTracks = config.appleMusic.playlistId ? 
+    const currentAppleTracks = (config.appleMusic.playlistId && config.appleMusic.userToken) ? 
       await appleMusicClient.getPlaylistTracks(config.appleMusic.playlistId) : [];
 
     // Create set of current track identifiers
