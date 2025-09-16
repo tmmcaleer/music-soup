@@ -51,7 +51,18 @@ const spotify = {
   clientId: requireEnv('SPOTIFY_CLIENT_ID'),
   clientSecret: requireEnv('SPOTIFY_CLIENT_SECRET'),
   refreshToken: requireEnv('SPOTIFY_REFRESH_TOKEN'),
-  playlistId: requireEnv('SPOTIFY_PLAYLIST_ID'),
+  // Support multiple playlists
+  playlists: {
+    source: {
+      id: getEnv('SPOTIFY_SOURCE_PLAYLIST_ID'),
+      type: 'Source'
+    },
+    // Future playlist support
+    temp: {
+      id: getEnv('SPOTIFY_TEMP_PLAYLIST_ID'),
+      type: 'Temp'
+    }
+  }
 };
 
 // Apple Music Configuration
@@ -65,16 +76,50 @@ const appleMusic = {
     return key.includes('\n') ? key : key.replace(/\\n/g, '\n');
   })(),
   userToken: getEnv('APPLE_MUSIC_USER_TOKEN'),
-  playlistId: getEnv('APPLE_MUSIC_PLAYLIST_ID'),
   storefront: getEnv('APPLE_MUSIC_STOREFRONT', 'us'),
+  // Support multiple playlists
+  playlists: {
+    source: {
+      id: getEnv('APPLE_MUSIC_SOURCE_PLAYLIST_ID'),
+      type: 'Source'
+    },
+    temp: {
+      id: getEnv('APPLE_MUSIC_TEMP_PLAYLIST_ID'),
+      type: 'Temp'
+    }
+  }
 };
 
-// Playlist Type Configuration
-// Maps playlist IDs to their types (Source/Temp)
-const playlistTypes = {
-  [spotify.playlistId]: getEnv('SPOTIFY_PLAYLIST_TYPE', 'Source'),
-  [appleMusic.playlistId]: getEnv('APPLE_MUSIC_PLAYLIST_TYPE', 'Source'),
-};
+// Helper function to get all configured playlists with their metadata
+function getAllConfiguredPlaylists() {
+  const playlists = [];
+  
+  // Add Spotify playlists
+  Object.entries(spotify.playlists).forEach(([key, playlist]) => {
+    if (playlist.id && playlist.id !== '') {
+      playlists.push({
+        service: 'spotify',
+        key,
+        id: playlist.id,
+        type: playlist.type
+      });
+    }
+  });
+  
+  // Add Apple Music playlists
+  Object.entries(appleMusic.playlists).forEach(([key, playlist]) => {
+    if (playlist.id && playlist.id !== '' && appleMusic.userToken) {
+      playlists.push({
+        service: 'appleMusic',
+        key,
+        id: playlist.id,
+        type: playlist.type
+      });
+    }
+  });
+  
+  return playlists;
+}
 
 // General Configuration
 const config = {
@@ -87,8 +132,8 @@ module.exports = {
   notion,
   spotify,
   appleMusic,
-  playlistTypes,
   config,
+  getAllConfiguredPlaylists,
   requireEnv,
   getEnv,
 };

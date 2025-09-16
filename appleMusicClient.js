@@ -334,9 +334,8 @@ async function processTrackData(track, playlistId) {
     trackData.genre = attrs.genreNames.join(', ');
   }
 
-  // Playlist information
-  const playlistType = config.playlistTypes[playlistId] || 'Source';
-  trackData.type = playlistType;
+  // Playlist information - will be set by orchestrator
+  trackData.type = 'Source'; // Default, will be overridden by orchestrator
   
   // Get playlist name for reference
   try {

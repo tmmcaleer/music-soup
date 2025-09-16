@@ -27,36 +27,68 @@ async function syncAllPlaylists() {
     errors: []
   };
 
+  const configuredPlaylists = config.getAllConfiguredPlaylists();
+  
   logger.info('🎵 Starting Music Soup sync process', {
-    spotifyPlaylist: config.spotify.playlistId,
-    appleMusicPlaylist: config.appleMusic.playlistId,
+    configuredPlaylists: configuredPlaylists.map(p => ({ service: p.service, type: p.type, id: p.id })),
+    totalPlaylists: configuredPlaylists.length,
     dryRun: config.config.dryRun
   });
 
   try {
-    // Sync Spotify playlist
-    if (config.spotify.playlistId && config.spotify.playlistId !== 'MISSING_SPOTIFY_PLAYLIST_ID') {
-      logger.info('🎧 Syncing Spotify playlist', { playlistId: config.spotify.playlistId });
-      const spotifyResult = await syncSpotifyPlaylist();
-      summary.spotify = spotifyResult;
-      summary.total.processed += spotifyResult.added + spotifyResult.updated;
-      summary.total.successful += spotifyResult.added + spotifyResult.updated;
-      summary.total.errors += spotifyResult.errors;
-    } else {
-      logger.warn('⚠️  Skipping Spotify sync - no playlist ID configured');
+    // Sync all configured playlists
+    for (const playlist of configuredPlaylists) {
+      try {
+        let result;
+        if (playlist.service === 'spotify') {
+          logger.info('🎧 Syncing Spotify playlist', { 
+            playlistId: playlist.id, 
+            type: playlist.type,
+            key: playlist.key 
+          });
+          result = await syncSpotifyPlaylist(playlist.id, playlist.type);
+        } else if (playlist.service === 'appleMusic') {
+          logger.info('🍎 Syncing Apple Music playlist', { 
+            playlistId: playlist.id, 
+            type: playlist.type,
+            key: playlist.key 
+          });
+          result = await syncAppleMusicPlaylist(playlist.id, playlist.type);
+        }
+
+        if (result) {
+          // Accumulate results by service
+          if (playlist.service === 'spotify') {
+            summary.spotify.added += result.added;
+            summary.spotify.updated += result.updated;
+            summary.spotify.errors += result.errors;
+          } else if (playlist.service === 'appleMusic') {
+            summary.appleMusic.added += result.added;
+            summary.appleMusic.updated += result.updated;
+            summary.appleMusic.errors += result.errors;
+          }
+
+          summary.total.processed += result.added + result.updated;
+          summary.total.successful += result.added + result.updated;
+          summary.total.errors += result.errors;
+        }
+
+      } catch (error) {
+        logger.error(`Failed to sync ${playlist.service} playlist ${playlist.id}`, {
+          playlistType: playlist.type,
+          error: error.message
+        });
+        if (playlist.service === 'spotify') {
+          summary.spotify.errors++;
+        } else if (playlist.service === 'appleMusic') {
+          summary.appleMusic.errors++;
+        }
+        summary.total.errors++;
+      }
     }
 
-    // Sync Apple Music playlist (only if properly configured)
-    if (config.appleMusic.playlistId && config.appleMusic.userToken && 
-        config.appleMusic.playlistId !== 'MISSING_APPLE_MUSIC_PLAYLIST_ID') {
-      logger.info('🍎 Syncing Apple Music playlist', { playlistId: config.appleMusic.playlistId });
-      const appleMusicResult = await syncAppleMusicPlaylist();
-      summary.appleMusic = appleMusicResult;
-      summary.total.processed += appleMusicResult.added + appleMusicResult.updated;
-      summary.total.successful += appleMusicResult.added + appleMusicResult.updated;
-      summary.total.errors += appleMusicResult.errors;
-    } else {
-      logger.warn('⚠️  Skipping Apple Music sync - missing configuration (userToken, playlistId, etc.)');
+    if (configuredPlaylists.length === 0) {
+      logger.warn('⚠️  No playlists configured for sync');
     }
 
     summary.duration = Date.now() - syncStart;
@@ -86,9 +118,11 @@ async function syncAllPlaylists() {
 
 /**
  * Sync Spotify playlist to Notion
+ * @param {string} playlistId - Spotify playlist ID to sync
+ * @param {string} playlistType - Type of playlist (Source/Temp)
  * @returns {Promise<Object>} - Sync results for Spotify
  */
-async function syncSpotifyPlaylist() {
+async function syncSpotifyPlaylist(playlistId, playlistType = 'Source') {
   const results = { added: 0, updated: 0, errors: 0, tracks: [] };
 
   try {
@@ -99,19 +133,26 @@ async function syncSpotifyPlaylist() {
     }
 
     // Get playlist metadata
-    const playlist = await spotifyClient.getPlaylist(config.spotify.playlistId);
+    const playlist = await spotifyClient.getPlaylist(playlistId);
     logger.info(`📋 Processing Spotify playlist: ${playlist.name}`, {
       trackCount: playlist.trackCount,
-      playlistId: config.spotify.playlistId
+      playlistId: playlistId,
+      playlistType: playlistType
     });
 
     // Get all tracks from the playlist
-    const tracks = await spotifyClient.getPlaylistTracks(config.spotify.playlistId);
+    const tracks = await spotifyClient.getPlaylistTracks(playlistId);
     
     // Process each track
     for (const track of tracks) {
       try {
-        const result = await syncTrackToNotion(track);
+        // Add playlist type to track data
+        const trackWithPlaylistInfo = {
+          ...track,
+          playlistType: playlistType
+        };
+        
+        const result = await syncTrackToNotion(trackWithPlaylistInfo);
         results.tracks.push({ track: track.title, result });
         
         if (result === 'created') {
@@ -127,6 +168,7 @@ async function syncSpotifyPlaylist() {
         results.errors++;
         logger.error(`Failed to sync Spotify track: ${track.title}`, {
           trackId: track.sourceId,
+          playlistType: playlistType,
           error: error.message
         });
       }
@@ -144,7 +186,8 @@ async function syncSpotifyPlaylist() {
 
   } catch (error) {
     logger.error('Failed to sync Spotify playlist', {
-      playlistId: config.spotify.playlistId,
+      playlistId: playlistId,
+      playlistType: playlistType,
       error: error.message
     });
     results.errors++;
@@ -154,9 +197,11 @@ async function syncSpotifyPlaylist() {
 
 /**
  * Sync Apple Music playlist to Notion
+ * @param {string} playlistId - Apple Music playlist ID to sync
+ * @param {string} playlistType - Type of playlist (Source/Temp)
  * @returns {Promise<Object>} - Sync results for Apple Music
  */
-async function syncAppleMusicPlaylist() {
+async function syncAppleMusicPlaylist(playlistId, playlistType = 'Source') {
   const results = { added: 0, updated: 0, errors: 0, tracks: [] };
 
   try {
@@ -167,19 +212,26 @@ async function syncAppleMusicPlaylist() {
     }
 
     // Get playlist metadata
-    const playlist = await appleMusicClient.getPlaylist(config.appleMusic.playlistId);
+    const playlist = await appleMusicClient.getPlaylist(playlistId);
     logger.info(`📋 Processing Apple Music playlist: ${playlist.name}`, {
       trackCount: playlist.trackCount,
-      playlistId: config.appleMusic.playlistId
+      playlistId: playlistId,
+      playlistType: playlistType
     });
 
     // Get all tracks from the playlist
-    const tracks = await appleMusicClient.getPlaylistTracks(config.appleMusic.playlistId);
+    const tracks = await appleMusicClient.getPlaylistTracks(playlistId);
     
     // Process each track
     for (const track of tracks) {
       try {
-        const result = await syncTrackToNotion(track);
+        // Add playlist type to track data
+        const trackWithPlaylistInfo = {
+          ...track,
+          playlistType: playlistType
+        };
+        
+        const result = await syncTrackToNotion(trackWithPlaylistInfo);
         results.tracks.push({ track: track.title, result });
         
         if (result === 'created') {
@@ -195,6 +247,7 @@ async function syncAppleMusicPlaylist() {
         results.errors++;
         logger.error(`Failed to sync Apple Music track: ${track.title}`, {
           trackId: track.sourceId,
+          playlistType: playlistType,
           error: error.message
         });
       }
@@ -212,7 +265,8 @@ async function syncAppleMusicPlaylist() {
 
   } catch (error) {
     logger.error('Failed to sync Apple Music playlist', {
-      playlistId: config.appleMusic.playlistId,
+      playlistId: playlistId,
+      playlistType: playlistType,
       error: error.message
     });
     results.errors++;
@@ -284,11 +338,26 @@ async function cleanupRemovedTracks() {
       }
     });
 
-    // Get current playlist tracks
-    const currentSpotifyTracks = config.spotify.playlistId ? 
-      await spotifyClient.getPlaylistTracks(config.spotify.playlistId) : [];
-    const currentAppleTracks = (config.appleMusic.playlistId && config.appleMusic.userToken) ? 
-      await appleMusicClient.getPlaylistTracks(config.appleMusic.playlistId) : [];
+    // Get current playlist tracks from all configured playlists
+    const configuredPlaylists = config.getAllConfiguredPlaylists();
+    const currentSpotifyTracks = [];
+    const currentAppleTracks = [];
+
+    for (const playlist of configuredPlaylists) {
+      try {
+        if (playlist.service === 'spotify') {
+          const tracks = await spotifyClient.getPlaylistTracks(playlist.id);
+          currentSpotifyTracks.push(...tracks);
+        } else if (playlist.service === 'appleMusic') {
+          const tracks = await appleMusicClient.getPlaylistTracks(playlist.id);
+          currentAppleTracks.push(...tracks);
+        }
+      } catch (error) {
+        logger.warn(`Failed to get tracks for cleanup from ${playlist.service} playlist ${playlist.id}`, {
+          error: error.message
+        });
+      }
+    }
 
     // Create set of current track identifiers
     const currentTrackIds = new Set();

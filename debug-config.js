@@ -15,26 +15,31 @@ console.log('\n🎧 Spotify:');
 console.log('  Client ID:', config.spotify.clientId ? '✅ Set' : '❌ Missing');
 console.log('  Client Secret:', config.spotify.clientSecret ? '✅ Set' : '❌ Missing');
 console.log('  Refresh Token:', config.spotify.refreshToken ? '✅ Set' : '❌ Missing');
-console.log('  Playlist ID:', config.spotify.playlistId ? '✅ Set' : '❌ Missing');
+console.log('  Source Playlist:', config.spotify.playlists.source.id ? '✅ Set' : '❌ Missing');
+console.log('  Temp Playlist:', config.spotify.playlists.temp.id ? '✅ Set' : '❌ Empty (optional)');
 
 console.log('\n🍎 Apple Music:');
 console.log('  Team ID:', config.appleMusic.teamId ? '✅ Set' : '❌ Missing');
 console.log('  Key ID:', config.appleMusic.keyId ? '✅ Set' : '❌ Missing');
 console.log('  Private Key:', config.appleMusic.privateKey ? '✅ Set' : '❌ Missing');
 console.log('  User Token:', config.appleMusic.userToken ? '✅ Set' : '❌ Missing');
-console.log('  Playlist ID:', config.appleMusic.playlistId ? '✅ Set' : '❌ Missing');
+console.log('  Source Playlist:', config.appleMusic.playlists.source.id ? '✅ Set' : '❌ Missing');
+console.log('  Temp Playlist:', config.appleMusic.playlists.temp.id ? '✅ Set' : '❌ Missing');
 console.log('  Storefront:', config.appleMusic.storefront ? '✅ Set' : '❌ Missing');
 
-// Check the condition that determines if Apple Music runs
-const appleMusicWillRun = config.appleMusic.playlistId && config.appleMusic.userToken && 
-                         config.appleMusic.playlistId !== 'MISSING_APPLE_MUSIC_PLAYLIST_ID';
+// Get all configured playlists
+const configuredPlaylists = config.getAllConfiguredPlaylists();
 
-console.log('\n🎯 Apple Music Sync Condition:');
-console.log('  Will Apple Music sync run?', appleMusicWillRun ? '✅ YES' : '❌ NO');
-
-if (!appleMusicWillRun) {
-  console.log('\n🚨 Apple Music will be skipped because:');
-  if (!config.appleMusic.playlistId) console.log('  - Missing APPLE_MUSIC_PLAYLIST_ID');
-  if (!config.appleMusic.userToken) console.log('  - Missing APPLE_MUSIC_USER_TOKEN');
-  if (config.appleMusic.playlistId === 'MISSING_APPLE_MUSIC_PLAYLIST_ID') console.log('  - Playlist ID is default placeholder');
+console.log('\n🎯 Configured Playlists:');
+if (configuredPlaylists.length === 0) {
+  console.log('  ❌ No playlists configured');
+} else {
+  configuredPlaylists.forEach(playlist => {
+    console.log(`  ✅ ${playlist.service} ${playlist.type}: ${playlist.id}`);
+  });
 }
+
+console.log('\n🎵 Sync Status:');
+console.log('  Total playlists to sync:', configuredPlaylists.length);
+console.log('  Spotify playlists:', configuredPlaylists.filter(p => p.service === 'spotify').length);
+console.log('  Apple Music playlists:', configuredPlaylists.filter(p => p.service === 'appleMusic').length);
