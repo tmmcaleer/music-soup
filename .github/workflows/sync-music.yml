@@ -31,9 +31,22 @@ jobs:
       
     - name: Debug Apple Music key format
       env:
+        # Notion Configuration (required by config.js)
+        NOTION_KEY: ${{ secrets.NOTION_KEY }}
+        NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
+        
+        # Spotify Configuration (required by config.js)  
+        SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+        SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+        SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+        SPOTIFY_PLAYLIST_ID: ${{ secrets.SPOTIFY_PLAYLIST_ID }}
+        
+        # Apple Music Configuration (for debugging)
         APPLE_MUSIC_PRIVATE_KEY: ${{ secrets.APPLE_MUSIC_PRIVATE_KEY }}
         APPLE_MUSIC_KEY_ID: ${{ secrets.APPLE_MUSIC_KEY_ID }}
         APPLE_MUSIC_TEAM_ID: ${{ secrets.APPLE_MUSIC_TEAM_ID }}
+        APPLE_MUSIC_USER_TOKEN: ${{ secrets.APPLE_MUSIC_USER_TOKEN }}
+        APPLE_MUSIC_PLAYLIST_ID: ${{ secrets.APPLE_MUSIC_PLAYLIST_ID }}
       run: |
         echo "🔍 Debugging Apple Music private key..."
         node debug-apple-key.js
