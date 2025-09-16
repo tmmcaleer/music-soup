@@ -58,7 +58,7 @@ const spotify = {
 const appleMusic = {
   teamId: getEnv('APPLE_MUSIC_TEAM_ID'),
   keyId: getEnv('APPLE_MUSIC_KEY_ID'),
-  privateKey: getEnv('APPLE_MUSIC_PRIVATE_KEY'),
+  privateKey: getEnv('APPLE_MUSIC_PRIVATE_KEY')?.replace(/\\n/g, '\n'), // Convert \n to actual newlines
   userToken: getEnv('APPLE_MUSIC_USER_TOKEN'),
   playlistId: getEnv('APPLE_MUSIC_PLAYLIST_ID'),
   storefront: getEnv('APPLE_MUSIC_STOREFRONT', 'us'),
