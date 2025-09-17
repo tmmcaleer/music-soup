@@ -8,9 +8,9 @@ on:
   repository_dispatch:
     types: [notion-sync]
   
-  # Scheduled sync every 5 minutes (unlimited on public repos)
-  schedule:
-    - cron: '*/5 * * * *'
+  # Scheduled sync disabled - will use webhook triggers instead
+  # schedule:
+  #   - cron: '*/5 * * * *'
 
 jobs:
   sync-playlists:
