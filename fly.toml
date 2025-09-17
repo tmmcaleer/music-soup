@@ -1,6 +1,6 @@
 # Fly.io configuration for Notion Webhook Server
 # NOTE: Update the app name to be unique for your deployment
-app = "your-unique-webhook-app-name"
+app = "music-soup-webhook-tim"
 primary_region = "ord"
 
 [build]
