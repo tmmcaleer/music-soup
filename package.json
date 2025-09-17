@@ -4,15 +4,18 @@
   "description": "Automated playlist sync from Spotify and Apple Music to Notion database",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node sync.js",
     "test": "jest",
-    "dev": "node index.js",
+    "dev": "node sync.js",
     "lint": "eslint .",
-    "sync": "node index.js"
+    "sync": "node sync.js",
+    "webhook": "node webhook-server.js"
   },
   "dependencies": {
     "@notionhq/client": "^2.2.13",
+    "axios": "^1.6.0",
     "dotenv": "^16.3.1",
+    "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
     "node-fetch": "^2.7.0"
   },
