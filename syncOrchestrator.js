@@ -384,6 +384,16 @@ async function cleanupRemovedTracks() {
         const isrc = notionTrack.properties['ISRC/UPC']?.rich_text?.[0]?.text?.content;
         const title = notionTrack.properties['Track Title']?.title?.[0]?.text?.content;
         const artist = notionTrack.properties['Artist']?.rich_text?.[0]?.text?.content;
+        const source = notionTrack.properties['Source']?.select?.name;
+
+        // Skip tracks that were manually added (Link Only or File Upload)
+        if (source === 'Link Only' || source === 'File Upload') {
+          logger.debug(`Skipping manually added track: ${title}`, {
+            source: source,
+            pageId: notionTrack.id
+          });
+          continue;
+        }
 
         let trackExists = false;
         

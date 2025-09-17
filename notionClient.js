@@ -293,7 +293,7 @@ function buildTrackProperties(trackData, isUpdate = false) {
   }
 
   if (trackData.playlist) {
-    properties[NOTION_FIELDS.PLAYLIST] = {
+    properties[NOTION_FIELDS.SOURCE] = {
       select: formatSelect(trackData.playlist),
     };
   }
@@ -326,7 +326,7 @@ function buildTrackProperties(trackData, isUpdate = false) {
 async function getPlaylistTracks(playlistName) {
   try {
     const filter = {
-      property: NOTION_FIELDS.PLAYLIST,
+      property: NOTION_FIELDS.SOURCE,
       rich_text: {
         equals: playlistName,
       },

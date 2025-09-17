@@ -1,175 +1,251 @@
-# Cursor Rules for Music Soup - Playlist Sync Automation
+# Cursor Rules for Music Soup - Project Organization & Maintenance
 
 ## 🎯 Project Overview
 This is a Node.js automation that syncs Apple Music and Spotify playlists into a Notion database. All code should align with the PRD requirements for flexibility, modularity, and API safety.
 
-## 📁 Required Directory Structure
-Enforce the following project organization:
+## 📁 MANDATORY Directory Structure
+Enforce the following project organization at ALL TIMES:
 
 ```
 /
-├── config.js                 # Centralized environment variable access
-├── endpoints.js              # All API endpoint constants
-├── schema.js                 # Notion schema and response field definitions
-├── spotifyClient.js          # Spotify API integration only
-├── appleMusicClient.js       # Apple Music API integration only
-├── notionClient.js           # Notion API integration only
-├── utils/
-│   ├── logger.js            # Central logging with levels (info, warn, error)
-│   └── [other helpers]      # Shared utilities (deduplication, date formatting, etc.)
-├── tests/
-│   ├── spotify.test.js      # Integration test stubs for Spotify
-│   ├── appleMusic.test.js   # Integration test stubs for Apple Music
-│   └── notion.test.js       # Integration test stubs for Notion
-├── scripts/
-│   └── [utility scripts]   # One-off helpers (token generation, etc.)
-└── .github/workflows/       # GitHub Actions workflows
+├── 📋 CORE APPLICATION (Root Level Only)
+│   ├── config.js                 # Centralized environment variable access
+│   ├── endpoints.js              # All API endpoint constants  
+│   ├── schema.js                 # Notion schema and response field definitions
+│   ├── spotifyClient.js          # Spotify API integration only
+│   ├── appleMusicClient.js       # Apple Music API integration only
+│   ├── notionClient.js           # Notion API integration only
+│   ├── syncOrchestrator.js       # Main orchestration logic
+│   ├── sync.js                   # Entry point for sync operations
+│   └── webhook-server.js         # Webhook server for external integrations
+│
+├── 🛠️ scripts/                   # ALL utility and debug scripts
+│   ├── get-spotify-token.js      # OAuth token generation
+│   ├── get-apple-music-user-token.js  # Apple Music user token helper
+│   ├── debug-config.js           # Configuration validation
+│   ├── debug-apple-key.js        # Apple Music key debugging
+│   └── [any new utility scripts] # Future one-off helpers
+│
+├── 🧪 tests/                     # ALL test files
+│   ├── integration-test.js       # API integration testing
+│   ├── spotify.test.js           # Spotify client tests (when created)
+│   ├── appleMusic.test.js        # Apple Music client tests (when created)
+│   └── notion.test.js            # Notion client tests (when created)
+│
+├── 🔧 utils/                     # Shared utilities only
+│   ├── logger.js                 # Central logging
+│   └── [shared helpers only]     # Deduplication, date formatting, etc.
+│
+├── 📚 docs/                      # ALL documentation
+│   ├── project-structure.md      # This structure guide
+│   ├── setup.md                  # Setup instructions
+│   ├── webhook-setup.md          # Webhook configuration
+│   ├── flyio-setup.md            # Deployment guide
+│   ├── initial-prd.md            # Original requirements
+│   ├── internal-readme.md        # Development notes
+│   └── [any new documentation]   # Future docs go here
+│
+├── 🚀 deployment/                # ALL deployment files
+│   ├── Dockerfile                # Container configuration
+│   ├── fly.toml                  # Fly.io settings
+│   └── [platform configs]       # Future deployment configs
+│
+└── ⚙️ .github/workflows/         # GitHub Actions only
+    └── sync-music.yml            # Automated workflows
 ```
 
-## 🔐 Secrets Management Rules
+## 🚫 FILE PLACEMENT RULES - NEVER VIOLATE
 
-### FORBIDDEN:
-- ❌ Hardcoding API keys, tokens, or private keys anywhere in code
-- ❌ Direct `process.env` calls outside of `config.js`
-- ❌ Committing sensitive values to Git
+### ❌ FORBIDDEN in Root Directory:
+- ❌ Debug scripts (use `scripts/`)
+- ❌ Test files (use `tests/`)
+- ❌ Documentation files (use `docs/`)
+- ❌ Deployment configs except package.json (use `deployment/`)
+- ❌ Utility scripts (use `scripts/`)
+- ❌ Any temporary files (clean up immediately)
 
-### REQUIRED:
-- ✅ All environment variables MUST be accessed through `config.js`
-- ✅ Sensitive values MUST come from `.env` or GitHub Secrets
-- ✅ Private keys must preserve line breaks and proper formatting
-- ✅ Example `.env` template in README.md (with fake values)
+### ✅ REQUIRED File Placement:
 
-## 🌐 API Safety & Anti-Hallucination Rules
+#### Core Application Files (Root Only):
+- ✅ API clients: `*Client.js` in root
+- ✅ Main logic: `syncOrchestrator.js`, `sync.js` in root
+- ✅ Configuration: `config.js`, `endpoints.js`, `schema.js` in root
+- ✅ Server: `webhook-server.js` in root
 
-### Endpoint Validation:
-- ✅ ALL API endpoints MUST match official documentation:
-  - Spotify: https://developer.spotify.com/documentation/web-api/
-  - Apple Music: https://developer.apple.com/documentation/applemusicapi/
-  - Notion: https://developers.notion.com/reference/
-- ✅ Custom endpoints MUST be declared as constants in `endpoints.js`
-- ✅ Every external API call MUST include inline comment with link to API docs
+#### Scripts Directory (`scripts/`):
+- ✅ ALL debugging scripts (`debug-*.js`)
+- ✅ ALL token generation scripts (`get-*-token.js`)
+- ✅ ALL one-off utilities and helpers
+- ✅ Scripts README.md
 
-### Schema Safety:
-- ✅ New Notion fields MUST be explicitly added to `schema.js` first
-- ✅ Response parsing MUST reference `schema.js` field definitions
-- ✅ Handle missing metadata gracefully (log gaps, don't crash)
+#### Tests Directory (`tests/`):
+- ✅ ALL test files (`*.test.js`, `integration-test.js`)
+- ✅ ALL mock data and fixtures
+- ✅ ALL testing utilities
 
-### Example Required Format:
+#### Documentation Directory (`docs/`):
+- ✅ ALL markdown files except main README.md
+- ✅ ALL setup and configuration guides
+- ✅ ALL internal documentation
+- ✅ ALL deployment guides
+
+#### Deployment Directory (`deployment/`):
+- ✅ Dockerfile and container configs
+- ✅ Platform-specific deployment files
+- ✅ Infrastructure as code
+
+#### Utils Directory (`utils/`):
+- ✅ ONLY shared utilities used by multiple modules
+- ✅ Logger, formatters, validators
+- ✅ NO business logic or API-specific code
+
+## 🔧 File Creation Rules
+
+### When Creating New Files:
+
+#### Debug/Utility Scripts:
 ```javascript
-// Spotify Get Playlist Tracks: https://developer.spotify.com/documentation/web-api/reference/get-playlists-tracks
-const response = await fetch(`${ENDPOINTS.SPOTIFY_PLAYLIST_TRACKS}/${playlistId}/tracks`);
-```
-
-## 🏗️ Code Organization Rules
-
-### File Responsibilities:
-- `spotifyClient.js`: ONLY Spotify API calls and auth
-- `appleMusicClient.js`: ONLY Apple Music API calls and auth  
-- `notionClient.js`: ONLY Notion API calls and database operations
-- `config.js`: ONLY environment variable access and validation
-- `endpoints.js`: ONLY API endpoint constants
-- `schema.js`: ONLY data structure definitions
-
-### Modularity Requirements:
-- ✅ Each API client must be independently testable
-- ✅ No cross-dependencies between API clients
-- ✅ Shared logic goes in `utils/` directory
-- ✅ Each file MUST have a docstring explaining its purpose
-
-## 🛡️ Error Handling & Logging
-
-### Required Patterns:
-- ✅ Every API call MUST include try-catch with specific error messages
-- ✅ All logging MUST go through `utils/logger.js` with proper levels
-- ✅ Rate limiting and retry logic for external APIs
-- ✅ Graceful degradation when metadata is missing
-
-### Example Required Format:
-```javascript
-try {
-  // Spotify Get Track: https://developer.spotify.com/documentation/web-api/reference/get-track
-  const response = await spotifyRequest(url);
-  logger.info(`Successfully fetched track: ${trackId}`);
-} catch (error) {
-  logger.error(`Failed to fetch Spotify track ${trackId}: ${error.message}`);
-  // Handle gracefully - don't crash the sync
-}
-```
-
-## 📊 PRD Alignment Reminders
-
-### Data Handling:
-- ✅ Notion URL field stores BOTH Spotify AND Apple Music URLs in same property
-- ✅ Use ISRC as primary key for deduplication when available
-- ✅ Handle incomplete metadata mappings between services
-- ✅ Preserve flexibility for future metadata enrichment
-
-### Workflow Requirements:
-- ✅ Support serverless execution via GitHub Actions
-- ✅ Allow manual tagging in Notion (don't overwrite human-added fields)
-- ✅ Log sync summaries and metadata gaps for monitoring
-
-## 🧪 Testing Requirements
-
-### Test Structure:
-- ✅ Integration test stubs MUST exist for each API client
-- ✅ Tests should verify auth flows and basic data retrieval
-- ✅ Mock external API calls to avoid hitting rate limits
-- ✅ Test error handling scenarios
-
-## 📝 Documentation Requirements
-
-### File Documentation:
-- ✅ Every file MUST start with a docstring explaining its purpose
-- ✅ Complex functions MUST have JSDoc comments
-- ✅ README.md MUST include setup instructions and example `.env`
-
-### Example Required Docstring:
-```javascript
+// ✅ CORRECT: Create in scripts/
+// File: scripts/debug-notion-schema.js
 /**
- * Spotify API Client
+ * Debug Notion Schema Validation
  * 
- * Handles all Spotify Web API interactions including authentication,
- * playlist fetching, and track metadata retrieval.
- * 
- * Dependencies: config.js for credentials, utils/logger.js for logging
- * API Docs: https://developer.spotify.com/documentation/web-api/
+ * Utility script to validate Notion database schema
+ * and check field mappings.
  */
 ```
 
-## 🚀 GitHub Actions Requirements
+#### Test Files:
+```javascript
+// ✅ CORRECT: Create in tests/
+// File: tests/spotify-auth.test.js
+/**
+ * Spotify Authentication Tests
+ * 
+ * Integration tests for Spotify OAuth flow
+ * and token management.
+ */
+```
 
-### Workflow Organization:
-- ✅ All workflows MUST be in `.github/workflows/`
-- ✅ Secrets MUST be loaded from GitHub Secrets, not hardcoded
-- ✅ Include error notifications and run summaries
-- ✅ Support manual triggers for testing
+#### Documentation:
+```markdown
+<!-- ✅ CORRECT: Create in docs/ -->
+<!-- File: docs/troubleshooting.md -->
+# Troubleshooting Guide
 
-## ⚡ Performance & Reliability
+Common issues and solutions...
+```
 
-### Required Patterns:
-- ✅ Implement exponential backoff for API retries
-- ✅ Batch operations where possible to respect rate limits
-- ✅ Cache tokens and refresh only when necessary
-- ✅ Graceful handling of API downtime
+#### Core Application:
+```javascript
+// ✅ CORRECT: Core logic in root
+// File: appleMusicV2Client.js (hypothetical)
+/**
+ * Apple Music API Client V2
+ * 
+ * Enhanced Apple Music API integration with improved
+ * error handling and metadata processing.
+ */
+```
 
-## 🎵 Music-Specific Considerations
+## 🧹 File Maintenance Rules
 
-### Apple Music Specifics:
-- ✅ Handle both Developer Token and Music User Token requirements
-- ✅ Include storefront parameter in all requests
-- ✅ Parse playlist URLs correctly for playlist IDs
+### Automatic Cleanup Requirements:
+- ✅ Remove any temporary files immediately after use
+- ✅ Move misplaced files to correct directories
+- ✅ Update documentation when structure changes
+- ✅ Keep directory README files current
 
-### Spotify Specifics:
-- ✅ Implement OAuth refresh token flow
-- ✅ Handle pagination for large playlists
-- ✅ Extract playlist IDs from Spotify URLs correctly
+### File Naming Conventions:
+- ✅ API clients: `servicenameClient.js` (camelCase)
+- ✅ Core modules: `camelCase.js`
+- ✅ Scripts: `kebab-case.js` or `descriptive-name.js`
+- ✅ Tests: `module-name.test.js`
+- ✅ Docs: `kebab-case.md`
 
-### Cross-Platform:
-- ✅ Normalize metadata schemas between services
-- ✅ Handle different field names gracefully (e.g., Composer vs Artist)
-- ✅ Store both service URLs in same Notion field
+## 🔍 Code Organization Rules
+
+### Import Path Standards:
+```javascript
+// ✅ CORRECT: Relative imports from organized structure
+const config = require('./config');                    // Root to root
+const logger = require('./utils/logger');              // Root to utils
+const debugConfig = require('./scripts/debug-config'); // Root to scripts
+
+// ✅ CORRECT: From scripts/
+const config = require('../config');                   // Scripts to root
+const logger = require('../utils/logger');             // Scripts to utils
+
+// ✅ CORRECT: From tests/
+const spotifyClient = require('../spotifyClient');     // Tests to root
+const logger = require('../utils/logger');             // Tests to utils
+```
+
+### Module Responsibilities:
+- ✅ `*Client.js`: ONLY API calls and service-specific auth
+- ✅ `config.js`: ONLY environment variable access
+- ✅ `utils/`: ONLY shared, reusable utilities
+- ✅ `scripts/`: ONLY one-off utilities and debugging
+- ✅ `tests/`: ONLY testing code and fixtures
+
+## 📝 Documentation Requirements
+
+### Required Documentation Updates:
+- ✅ Update `docs/project-structure.md` when adding directories
+- ✅ Update individual README files when adding scripts
+- ✅ Document new file purposes in file headers
+- ✅ Keep main README.md focused on high-level overview
+
+### File Header Requirements:
+```javascript
+/**
+ * [File Purpose in One Line]
+ * 
+ * [Detailed description of what this file does]
+ * 
+ * Dependencies: [list key dependencies]
+ * Location Rationale: [why this file is in this directory]
+ */
+```
+
+## 🚨 Enforcement Rules
+
+### Before Creating Any File:
+1. ✅ Determine correct directory based on file purpose
+2. ✅ Check if similar functionality already exists
+3. ✅ Follow naming conventions
+4. ✅ Add proper file header documentation
+5. ✅ Update relevant README if needed
+
+### Before Moving Files:
+1. ✅ Verify no import dependencies will break
+2. ✅ Update any affected documentation
+3. ✅ Test that functionality still works
+4. ✅ Update related README files
+
+### Regular Maintenance:
+- ✅ Review root directory monthly for misplaced files
+- ✅ Ensure no business logic creeps into utils/
+- ✅ Keep scripts/ organized and documented
+- ✅ Remove obsolete files promptly
+
+## 🎯 Goals of This Structure
+
+### Maintainability:
+- Clear separation of concerns
+- Predictable file locations
+- Minimal cognitive load for navigation
+
+### Scalability:
+- Room for growth in each category
+- Consistent patterns for new features
+- Isolated changes to minimize impact
+
+### Developer Experience:
+- Quick file discovery
+- Logical organization
+- Self-documenting structure
 
 ---
 
-Remember: This automation should be robust enough to run unattended while flexible enough to handle the quirks of music metadata across different platforms.
+**REMEMBER: This structure exists to make the codebase more maintainable and professional. Always follow these rules when creating, moving, or organizing files.**

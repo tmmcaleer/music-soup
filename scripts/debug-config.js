@@ -2,7 +2,7 @@
  * Debug configuration to check which secrets are missing
  */
 
-const config = require('./config');
+const config = require('../config');
 
 console.log('🔍 Configuration Debug:');
 console.log('======================');

@@ -20,7 +20,7 @@ const NOTION_FIELDS = {
   DURATION: 'Duration',
   ISRC_UPC: 'ISRC/UPC',
   URL: 'URL',
-  PLAYLIST: 'Playlist',
+  SOURCE: 'Source', // Track source: auto-populated playlist names or manual 'Link Only'/'File Upload'
   TYPE: 'Type',
   CREATED_TIME: 'Created time',
   REMOVED: 'Removed',
@@ -32,6 +32,7 @@ const NOTION_FIELDS = {
   NOTES: 'Notes', 
   INSTRUMENTS: 'Instruments',
   MOOD: 'Mood/Keywords',
+  FILE_UPLOAD: 'File Upload',
 };
 
 // Notion Property Types
@@ -96,10 +97,12 @@ const DATABASE_SCHEMA = {
     required: false,
     automated: true,
   },
-  [NOTION_FIELDS.PLAYLIST]: {
+  [NOTION_FIELDS.SOURCE]: {
     type: NOTION_PROPERTY_TYPES.SELECT,
     required: true,
     automated: true,
+    options: ['Spotify - [Playlist Name]', 'Apple Music - [Playlist Name]', 'Link Only', 'File Upload'],
+    description: 'Source of the track - auto-populated for synced tracks, manually set for supervisor additions',
   },
   [NOTION_FIELDS.TYPE]: {
     type: NOTION_PROPERTY_TYPES.SELECT,
@@ -146,6 +149,12 @@ const DATABASE_SCHEMA = {
     type: NOTION_PROPERTY_TYPES.MULTI_SELECT,
     required: false,
     automated: false,
+  },
+  [NOTION_FIELDS.FILE_UPLOAD]: {
+    type: NOTION_PROPERTY_TYPES.URL, // or FILES if Notion supports file properties
+    required: false,
+    automated: false, // ← This is KEY - workflow will never touch this field
+    description: 'File upload for music supervisor - manually managed only',
   },
 };
 
