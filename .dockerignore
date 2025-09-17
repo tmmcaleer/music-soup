@@ -1,0 +1,20 @@
+# Docker ignore file for webhook server
+node_modules
+npm-debug.log
+.git
+.gitignore
+README*.md
+WEBHOOK_SETUP.md
+.env*
+*.log
+.DS_Store
+coverage
+.nyc_output
+test
+tests
+*.test.js
+*.spec.js
+
+# Keep only what we need for the webhook server
+!webhook-server.js
+!package*.json

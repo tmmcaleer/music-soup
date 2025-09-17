@@ -4,12 +4,15 @@
  * Receives webhook events from Notion automations and triggers GitHub Actions
  * workflow via repository_dispatch events.
  * 
+ * SECURITY NOTE: This code is in a public GitHub repo.
+ * - NO sensitive data is hardcoded
+ * - Secrets are provided via environment variables
+ * - Deploy to Fly.io using `fly secrets set` for security
+ * 
  * Setup:
- * 1. Install dependencies: npm install express axios
- * 2. Set environment variables (see below)
- * 3. Run: node webhook-server.js
- * 4. Expose via ngrok or port forwarding: ngrok http 3000
- * 5. Use the public URL in Notion webhook automation
+ * 1. Deploy to Fly.io (see FLYIO_SETUP.md)
+ * 2. Set secrets: fly secrets set GITHUB_TOKEN=your_token
+ * 3. Configure Notion webhook with your Fly.io URL
  */
 
 const express = require('express');

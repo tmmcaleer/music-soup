@@ -1,0 +1,37 @@
+# Fly.io configuration for Notion Webhook Server
+# NOTE: Update the app name to be unique for your deployment
+app = "your-unique-webhook-app-name"
+primary_region = "ord"
+
+[build]
+
+[env]
+  # Public configuration - safe to commit
+  GITHUB_OWNER = "tmmcaleer"
+  GITHUB_REPO = "music-soup"
+  WEBHOOK_PORT = "8080"
+  # SENSITIVE VALUES (GITHUB_TOKEN, WEBHOOK_SECRET) ARE SET VIA fly secrets
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[http_service.checks]]
+  grace_period = "1s"
+  interval = "15s"
+  restart_limit = 0
+  timeout = "2s"
+  path = "/health"
+
+[http_service.concurrency]
+  type = "requests"
+  hard_limit = 25
+  soft_limit = 20
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
