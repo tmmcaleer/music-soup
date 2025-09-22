@@ -105,7 +105,7 @@ const DATABASE_SCHEMA = {
     description: 'Source of the track - auto-populated for synced tracks, manually set for supervisor additions',
   },
   [NOTION_FIELDS.TYPE]: {
-    type: NOTION_PROPERTY_TYPES.SELECT,
+    type: NOTION_PROPERTY_TYPES.MULTI_SELECT,
     required: true,
     automated: true,
     options: ['Source', 'Temp'],
@@ -257,6 +257,27 @@ function formatCheckbox(value) {
   return Boolean(value);
 }
 
+/**
+ * Format multi-select for Notion multi_select property
+ * @param {string|Array} values - Multi-select value(s)
+ * @returns {Array} - Notion multi_select array
+ */
+function formatMultiSelect(values) {
+  if (!values) return [];
+  
+  // If it's a single string, convert to array
+  if (typeof values === 'string') {
+    return [{ name: String(values) }];
+  }
+  
+  // If it's already an array, format each item
+  if (Array.isArray(values)) {
+    return values.filter(Boolean).map(value => ({ name: String(value) }));
+  }
+  
+  return [];
+}
+
 module.exports = {
   NOTION_FIELDS,
   NOTION_PROPERTY_TYPES,
@@ -270,5 +291,6 @@ module.exports = {
   formatUrl,
   formatNumber,
   formatCheckbox,
+  formatMultiSelect,
 };
 

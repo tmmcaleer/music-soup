@@ -10,7 +10,7 @@
 
 const { Client } = require('@notionhq/client');
 const config = require('./config');
-const { NOTION_FIELDS, formatRichText, formatTitle, formatDate, formatDuration, formatReleaseYear, formatSelect, formatUrl, formatNumber, formatCheckbox } = require('./schema');
+const { NOTION_FIELDS, formatRichText, formatTitle, formatDate, formatDuration, formatReleaseYear, formatSelect, formatUrl, formatNumber, formatCheckbox, formatMultiSelect } = require('./schema');
 const { NOTION } = require('./endpoints');
 const logger = require('./utils/logger');
 
@@ -300,7 +300,7 @@ function buildTrackProperties(trackData, isUpdate = false) {
 
   if (trackData.type) {
     properties[NOTION_FIELDS.TYPE] = {
-      select: formatSelect(trackData.type),
+      multi_select: formatMultiSelect(trackData.type),
     };
   }
 
