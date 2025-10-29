@@ -30,6 +30,7 @@ jobs:
       run: npm ci
       
     - name: Run playlist sync
+      id: sync_step
       env:
         # Notion Configuration
         NOTION_KEY: ${{ secrets.NOTION_KEY }}
@@ -57,10 +58,50 @@ jobs:
         DRY_RUN: false
       run: |
         echo "🎵 Starting Music Soup sync..."
-        node sync.js
+        # Capture output and check for token errors
+        if ! node sync.js 2>&1 | tee sync_output.log; then
+          # Check if it's a token error
+          if grep -q "invalid_grant\|Refresh token revoked\|Token refresh failed" sync_output.log; then
+            echo "TOKEN_ERROR=true" >> $GITHUB_OUTPUT
+            echo "🚨 Token refresh error detected!"
+          fi
+          exit 1
+        fi
         echo "✅ Sync completed successfully!"
+        
+    - name: Send token refresh alert email
+      if: steps.sync_step.outputs.TOKEN_ERROR == 'true'
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 587
+        username: ${{ secrets.ALERT_EMAIL_USERNAME }}
+        password: ${{ secrets.ALERT_EMAIL_PASSWORD }}
+        subject: "🚨 Music Soup: Spotify Token Needs Refresh"
+        to: ${{ secrets.ALERT_EMAIL_TO }}
+        from: Music Soup Automation <${{ secrets.ALERT_EMAIL_USERNAME }}>
+        body: |
+          Hi Tim,
+          
+          Your Music Soup automation detected that the Spotify refresh token has expired and needs to be updated.
+          
+          🔧 To fix this:
+          1. Run: node scripts/get-spotify-token.js
+          2. Update GitHub secret: SPOTIFY_REFRESH_TOKEN
+          
+          📊 Error Details:
+          - Workflow: ${{ github.workflow }}
+          - Run: ${{ github.run_id }}
+          - Time: ${{ github.event.head_commit.timestamp }}
+          
+          View logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          
+          🎵 Music Soup Automation
         
     - name: Post sync summary
       if: always()
       run: |
         echo "📊 Sync job finished with status: ${{ job.status }}"
+        if [[ "${{ steps.sync_step.outputs.TOKEN_ERROR }}" == "true" ]]; then
+          echo "🚨 Token refresh alert sent!"
+        fi
