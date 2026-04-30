@@ -9,7 +9,8 @@
     "dev": "node sync.js",
     "lint": "eslint .",
     "sync": "node sync.js",
-    "webhook": "node webhook-server.js"
+    "webhook": "node webhook-server.js",
+    "webhook:local": "node local-webhook-server.js"
   },
   "dependencies": {
     "@notionhq/client": "^2.2.13",
