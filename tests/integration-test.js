@@ -7,14 +7,14 @@
  * Run with: node integration-test.js
  */
 
-const config = require('./config');
-const logger = require('./utils/logger');
+const config = require('../config');
+const logger = require('../utils/logger');
 
 async function testSpotifyAuth() {
   console.log('🎵 Testing Spotify authentication...');
   
   try {
-    const spotifyClient = require('./spotifyClient');
+    const spotifyClient = require('../spotifyClient');
     
     // Test if we can get an access token
     const token = await spotifyClient.getAccessToken();
@@ -33,10 +33,10 @@ async function testSpotifyAuth() {
 }
 
 async function testAppleMusicAuth() {
-  console.log('\\n🍎 Testing Apple Music authentication...');
+  console.log('\n🍎 Testing Apple Music authentication...');
   
   try {
-    const appleMusicClient = require('./appleMusicClient');
+    const appleMusicClient = require('../appleMusicClient');
     
     // Test developer token generation
     const token = appleMusicClient.getDeveloperToken();
@@ -55,10 +55,10 @@ async function testAppleMusicAuth() {
 }
 
 async function testNotionConnection() {
-  console.log('\\n📝 Testing Notion connection...');
+  console.log('\n📝 Testing Notion connection...');
   
   try {
-    const notionClient = require('./notionClient');
+    const notionClient = require('../notionClient');
     
     // Test if we can retrieve the database schema
     const schema = await notionClient.getDatabaseSchema();
@@ -88,7 +88,7 @@ async function testNotionConnection() {
 }
 
 async function testPlaylistAccess() {
-  console.log('\\n📋 Testing playlist access...');
+  console.log('\n📋 Testing playlist access...');
   
   const results = {
     spotify: false,
@@ -97,8 +97,13 @@ async function testPlaylistAccess() {
   
   // Test Spotify playlist access
   try {
-    const spotifyClient = require('./spotifyClient');
-    const playlist = await spotifyClient.getPlaylist(config.spotify.playlistId);
+    const spotifyClient = require('../spotifyClient');
+    const playlistId = config.spotify.playlists.source.id;
+    if (!playlistId) {
+      console.log('⚠️  Spotify playlist ID not configured, skipping playlist access test');
+      return results;
+    }
+    const playlist = await spotifyClient.getPlaylist(playlistId);
     console.log('✅ Spotify playlist accessible');
     console.log(`   - Name: ${playlist.name}`);
     console.log(`   - Tracks: ${playlist.trackCount}`);
@@ -112,8 +117,13 @@ async function testPlaylistAccess() {
   
   // Test Apple Music playlist access
   try {
-    const appleMusicClient = require('./appleMusicClient');
-    const playlist = await appleMusicClient.getPlaylist(config.appleMusic.playlistId);
+    const appleMusicClient = require('../appleMusicClient');
+    const playlistId = config.appleMusic.playlists.source.id;
+    if (!playlistId) {
+      console.log('⚠️  Apple Music playlist ID not configured, skipping playlist access test');
+      return results;
+    }
+    const playlist = await appleMusicClient.getPlaylist(playlistId);
     console.log('✅ Apple Music playlist accessible');
     console.log(`   - Name: ${playlist.name}`);
     console.log(`   - Tracks: ${playlist.trackCount}`);
@@ -132,7 +142,7 @@ async function testPlaylistAccess() {
 }
 
 async function main() {
-  console.log('🧪 Music Soup Integration Test\\n');
+  console.log('🧪 Music Soup Integration Test\n');
   console.log('This test requires real API credentials in your .env file\\n');
   
   // Check if .env exists
@@ -157,7 +167,7 @@ async function main() {
   results.playlistAccess = await testPlaylistAccess();
   
   // Summary
-  console.log('\\n📊 Integration Test Summary');
+  console.log('\n📊 Integration Test Summary');
   console.log('════════════════════════════');
   console.log(`Spotify Auth:        ${results.spotify ? '✅ Pass' : '❌ Fail'}`);
   console.log(`Apple Music Auth:    ${results.appleMusic ? '✅ Pass' : '❌ Fail'}`);
@@ -169,27 +179,27 @@ async function main() {
                    results.playlistAccess.spotify && results.playlistAccess.appleMusic;
   
   if (allPassed) {
-    console.log('\\n🎉 All integration tests passed! Ready for full sync testing.');
+    console.log('\n🎉 All integration tests passed! Ready for full sync testing.');
   } else {
-    console.log('\\n⚠️  Some tests failed. Please check your .env configuration and API access.');
+    console.log('\n⚠️  Some tests failed. Please check your .env configuration and API access.');
   }
   
-  console.log('\\n💡 Next step: Run a test sync with a few tracks to validate end-to-end flow');
+  console.log('\n💡 Next step: Run a test sync with a few tracks to validate end-to-end flow');
 }
 
 // Handle uncaught errors gracefully
 process.on('uncaughtException', (error) => {
-  console.error('\\n💥 Unexpected error:', error.message);
+  console.error('\n💥 Unexpected error:', error.message);
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('\\n💥 Unhandled promise rejection:', reason);
+  console.error('\n💥 Unhandled promise rejection:', reason);
   process.exit(1);
 });
 
 main().catch(error => {
-  console.error('\\n💥 Integration test failed:', error.message);
+  console.error('\n💥 Integration test failed:', error.message);
   process.exit(1);
 });
 
