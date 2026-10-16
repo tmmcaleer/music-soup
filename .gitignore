@@ -41,6 +41,7 @@ pids/
 *.pid
 *.seed
 *.pid.lock
+.music-soup-sync.lock
 
 # Coverage directory used by tools like istanbul
 coverage/

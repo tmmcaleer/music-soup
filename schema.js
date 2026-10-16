@@ -19,6 +19,7 @@ const NOTION_FIELDS = {
   RELEASE_DATE: 'Release Date',
   DURATION: 'Duration',
   ISRC_UPC: 'ISRC/UPC',
+  PLATFORM_TRACK_ID: 'Platform Track ID',
   URL: 'URL',
   SOURCE: 'Source', // Track source: auto-populated playlist names or manual 'Link Only'/'File Upload'
   TYPE: 'Type',
@@ -91,6 +92,12 @@ const DATABASE_SCHEMA = {
     type: NOTION_PROPERTY_TYPES.RICH_TEXT,
     required: false,
     automated: true,
+  },
+  [NOTION_FIELDS.PLATFORM_TRACK_ID]: {
+    type: NOTION_PROPERTY_TYPES.RICH_TEXT,
+    required: false,
+    automated: true,
+    description: 'Stable platform-qualified track ID, such as spotify:TRACK_ID or appleMusic:SONG_ID',
   },
   [NOTION_FIELDS.URL]: {
     type: NOTION_PROPERTY_TYPES.URL,
@@ -293,4 +300,3 @@ module.exports = {
   formatCheckbox,
   formatMultiSelect,
 };
-

@@ -18,6 +18,7 @@
 const syncOrchestrator = require('./syncOrchestrator');
 const config = require('./config');
 const logger = require('./utils/logger');
+const { withSyncLock } = require('./utils/syncLock');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -91,6 +92,7 @@ async function main() {
       options: options
     });
 
+    await withSyncLock(async () => {
     let results;
 
     if (options.cleanupOnly) {
@@ -161,6 +163,8 @@ async function main() {
     }
 
     console.log('\n✅ Sync completed successfully!');
+    });
+
     process.exit(0);
 
   } catch (error) {
