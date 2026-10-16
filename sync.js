@@ -15,9 +15,13 @@
  * Dependencies: syncOrchestrator.js, config.js, utils/logger.js
  */
 
+// Keep shadow stdout machine-readable; diagnostic errors still go to stderr.
+if (process.argv.includes('--shadow')) process.env.LOG_LEVEL = 'error';
+
 const syncOrchestrator = require('./syncOrchestrator');
 const config = require('./config');
 const logger = require('./utils/logger');
+const { withSyncLock } = require('./utils/syncLock');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -26,6 +30,7 @@ const options = {
   appleOnly: args.includes('--apple'),
   cleanupOnly: args.includes('--cleanup'),
   dryRun: args.includes('--dry-run'),
+  shadow: args.includes('--shadow'),
   help: args.includes('--help') || args.includes('-h')
 };
 
@@ -44,6 +49,7 @@ OPTIONS:
   --apple       Sync only Apple Music playlist
   --cleanup     Only cleanup removed tracks
   --dry-run     Preview changes without applying them
+  --shadow      Read-only JSON decision and membership report (no mutations)
   --help, -h    Show this help message
 
 EXAMPLES:
@@ -75,6 +81,15 @@ async function main() {
     process.exit(0);
   }
 
+  if (options.shadow) {
+    if (options.spotifyOnly || options.appleOnly || options.cleanupOnly) {
+      throw new Error('--shadow requires all configured playlists; partial-mode flags are not allowed');
+    }
+    const report = await syncOrchestrator.fullSync({ shadow: true });
+    console.log(JSON.stringify(report, null, 2));
+    process.exit(report.success ? 0 : 1);
+  }
+
   // Override dry run if specified
   if (options.dryRun) {
     process.env.DRY_RUN = 'true';
@@ -91,6 +106,7 @@ async function main() {
       options: options
     });
 
+    await withSyncLock(async () => {
     let results;
 
     if (options.cleanupOnly) {
@@ -161,6 +177,8 @@ async function main() {
     }
 
     console.log('\n✅ Sync completed successfully!');
+    });
+
     process.exit(0);
 
   } catch (error) {

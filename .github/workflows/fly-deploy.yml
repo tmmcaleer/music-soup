@@ -1,10 +1,9 @@
-# See https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/
+# Deprecated: Fly deploy disabled in favor of local scheduled sync.
+# Re-enable manually via workflow_dispatch if rollback is needed.
 
 name: Fly Deploy
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 jobs:
   deploy:
     name: Deploy app

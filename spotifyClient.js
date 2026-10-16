@@ -178,19 +178,24 @@ async function getPlaylist(playlistId) {
  * @param {string} playlistId - Spotify playlist ID
  * @returns {Promise<Array>} - Array of track objects
  */
-async function getPlaylistTracks(playlistId) {
+async function getPlaylistTracks(playlistId, { playlistName } = {}) {
   try {
     const tracks = [];
     let nextUrl = SPOTIFY.PLAYLIST_TRACKS(playlistId);
+    const seenPages = new Set();
     
     while (nextUrl) {
+      if (seenPages.has(nextUrl)) throw new Error('Incomplete Spotify playlist: repeated page');
+      seenPages.add(nextUrl);
       // Spotify Get Playlist Tracks: https://developer.spotify.com/documentation/web-api/reference/get-playlists-tracks
       const data = await spotifyRequest(nextUrl);
       
-      // Process each track item
+      if (!Array.isArray(data.items)) throw new Error('Incomplete Spotify playlist: missing items');
+      // Unknown/unavailable entries cannot be treated as confirmed absence.
       for (const item of data.items) {
+        if (!item.track || item.track.type !== 'track') throw new Error('Incomplete Spotify playlist: unsupported or unavailable item');
         if (item.track && item.track.type === 'track') {
-          const trackData = await processTrackData(item.track, playlistId);
+          const trackData = await processTrackData(item.track, playlistId, playlistName);
           tracks.push(trackData);
         }
       }
@@ -247,7 +252,7 @@ async function getTrack(trackId) {
  * @param {string} playlistId - Source playlist ID
  * @returns {Promise<Object>} - Normalized track data
  */
-async function processTrackData(track, playlistId) {
+async function processTrackData(track, playlistId, playlistName) {
   const missingFields = [];
   
   // Basic track information
@@ -256,7 +261,7 @@ async function processTrackData(track, playlistId) {
     sourceId: track.id,
     title: track.name,
     url: track.external_urls?.spotify,
-    duration: track.duration_ms ? Math.round(track.duration_ms / 1000) : null,
+    duration: Number.isSafeInteger(track.duration_ms) && track.duration_ms > 0 ? track.duration_ms / 1000 : null,
     trackNumber: track.track_number,
     explicit: track.explicit,
     popularity: track.popularity,
@@ -290,12 +295,16 @@ async function processTrackData(track, playlistId) {
   trackData.type = 'Source'; // Default, will be overridden by orchestrator
   
   // Get playlist name for reference with service prefix
-  try {
-    const playlist = await getPlaylist(playlistId);
-    trackData.playlist = `Spotify - ${playlist.name}`;
-  } catch (error) {
-    logger.warn(`Could not get playlist name for ${playlistId}, using ID`, error);
-    trackData.playlist = `Spotify - ${playlistId}`;
+  if (playlistName !== undefined) {
+    trackData.playlist = `Spotify - ${playlistName}`;
+  } else {
+    try {
+      const playlist = await getPlaylist(playlistId);
+      trackData.playlist = `Spotify - ${playlist.name}`;
+    } catch (error) {
+      logger.warn(`Could not get playlist name for ${playlistId}, using ID`, error);
+      trackData.playlist = `Spotify - ${playlistId}`;
+    }
   }
 
   // Log metadata gaps
@@ -340,4 +349,3 @@ module.exports = {
   checkServiceHealth,
   getAccessToken,
 };
-

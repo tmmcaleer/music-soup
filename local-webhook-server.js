@@ -13,6 +13,7 @@ require('./config');
 
 const logger = require('./utils/logger');
 const syncOrchestrator = require('./syncOrchestrator');
+const { withSyncLock } = require('./utils/syncLock');
 
 /**
  * @typedef {Object} SyncResultSummary
@@ -131,6 +132,7 @@ function isAuthorizedWebhook(req) {
 function buildHealthResponse(state) {
   return {
     status: 'ok',
+    syncPolicy: syncOrchestrator.SYNC_POLICY_VERSION,
     syncRunning: state.syncRunning,
     pendingSync: state.pendingSync,
     lastStartedAt: state.lastStartedAt,
@@ -201,7 +203,7 @@ async function runSingleSync(state, trigger) {
   });
 
   try {
-    const syncResults = await syncOrchestrator.fullSync();
+    const syncResults = await withSyncLock(() => syncOrchestrator.fullSync());
     const finishedAt = new Date().toISOString();
     const durationMs = Date.now() - startedAtMs;
 

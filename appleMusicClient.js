@@ -196,27 +196,34 @@ async function getPlaylist(playlistId) {
  * @param {string} playlistId - Apple Music playlist ID
  * @returns {Promise<Array>} - Array of track objects
  */
-async function getPlaylistTracks(playlistId) {
+async function getPlaylistTracks(playlistId, { playlistName } = {}) {
   try {
     const tracks = [];
     let nextUrl = `${APPLE_MUSIC.PLAYLIST_TRACKS(config.appleMusic.storefront, playlistId)}?limit=100`;
+    const seenPages = new Set();
     
     while (nextUrl) {
+      if (seenPages.has(nextUrl)) throw new Error('Incomplete Apple Music playlist: repeated page');
+      seenPages.add(nextUrl);
       // Apple Music Get Playlist Tracks: https://developer.apple.com/documentation/applemusicapi/get_a_catalog_playlist_s_tracks
       const data = await appleMusicRequest(nextUrl);
       
+      if (!Array.isArray(data.data)) throw new Error('Incomplete Apple Music playlist: missing items');
       // Process each track
       if (data.data) {
         for (const track of data.data) {
+          if (!track || track.type !== 'songs') throw new Error('Incomplete Apple Music playlist: unsupported or unavailable item');
           if (track.type === 'songs') {
-            const trackData = await processTrackData(track, playlistId);
+            const trackData = await processTrackData(track, playlistId, playlistName);
             tracks.push(trackData);
           }
         }
       }
       
-      // Check for pagination
-      nextUrl = data.next ? `${APPLE_MUSIC.BASE_URL}${data.next}` : null;
+      // Check for pagination (data.next is a path like /v1/catalog/..., not a full URL)
+      nextUrl = data.next
+        ? (data.next.startsWith('http') ? data.next : `https://api.music.apple.com${data.next}`)
+        : null;
       
       logger.debug(`Processed Apple Music playlist page`, {
         playlistId,
@@ -273,7 +280,7 @@ async function getTrack(trackId) {
  * @param {string} playlistId - Source playlist ID
  * @returns {Promise<Object>} - Normalized track data
  */
-async function processTrackData(track, playlistId) {
+async function processTrackData(track, playlistId, playlistName) {
   const missingFields = [];
   const attrs = track.attributes;
   
@@ -283,7 +290,7 @@ async function processTrackData(track, playlistId) {
     sourceId: track.id,
     title: attrs.name,
     url: attrs.url,
-    duration: attrs.durationInMillis ? Math.round(attrs.durationInMillis / 1000) : null,
+    duration: Number.isSafeInteger(attrs.durationInMillis) && attrs.durationInMillis > 0 ? attrs.durationInMillis / 1000 : null,
     trackNumber: attrs.trackNumber,
     explicit: attrs.contentRating === 'explicit',
   };
@@ -338,12 +345,16 @@ async function processTrackData(track, playlistId) {
   trackData.type = 'Source'; // Default, will be overridden by orchestrator
   
   // Get playlist name for reference with service prefix
-  try {
-    const playlist = await getPlaylist(playlistId);
-    trackData.playlist = `Apple Music - ${playlist.name}`;
-  } catch (error) {
-    logger.warn(`Could not get playlist name for ${playlistId}, using ID`, error);
-    trackData.playlist = `Apple Music - ${playlistId}`;
+  if (playlistName !== undefined) {
+    trackData.playlist = `Apple Music - ${playlistName}`;
+  } else {
+    try {
+      const playlist = await getPlaylist(playlistId);
+      trackData.playlist = `Apple Music - ${playlist.name}`;
+    } catch (error) {
+      logger.warn(`Could not get playlist name for ${playlistId}, using ID`, error);
+      trackData.playlist = `Apple Music - ${playlistId}`;
+    }
   }
 
   // Log metadata gaps
@@ -401,4 +412,3 @@ module.exports = {
   getDeveloperToken,
   generateDeveloperToken,
 };
-

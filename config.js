@@ -44,6 +44,9 @@ function getEnv(key, defaultValue = '') {
 const notion = {
   apiKey: requireEnv('NOTION_KEY'),
   databaseId: requireEnv('NOTION_DB_ID'),
+  membershipDatabaseId: getEnv('NOTION_MEMBERSHIP_DB_ID'),
+  reportPageId: getEnv('NOTION_REPORT_PAGE_ID', ''),
+  mentionUserId: getEnv('NOTION_MENTION_USER_ID', ''),
 };
 
 // Spotify Configuration
@@ -126,6 +129,7 @@ const config = {
   syncIntervalMinutes: parseInt(getEnv('SYNC_INTERVAL_MINUTES', '5')),
   logLevel: getEnv('LOG_LEVEL', 'info'),
   dryRun: getEnv('DRY_RUN', 'false').toLowerCase() === 'true',
+  syncTimezone: getEnv('SYNC_TIMEZONE', 'America/New_York'),
 };
 
 module.exports = {
@@ -137,4 +141,3 @@ module.exports = {
   requireEnv,
   getEnv,
 };
-
