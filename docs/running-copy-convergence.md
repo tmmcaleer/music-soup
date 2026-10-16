@@ -4,7 +4,7 @@ Two code lines of Music Soup existed on 2026-10-16:
 
 | | `main` (fc1c334) | running copy (`running-copy-2026-10-16`) |
 |---|---|---|
-| Where | GitHub `main`; byte-identical copies of the imported files on the workspace share (`~/Documents/Github/music-soup-server` on the host, `/Volumes/music-soup-server` mounted) | `~/music-soup-server` on Mr-Filemaker, the tree `com.music-soup.scheduled-sync` runs at 09/13/18 via `npm run sync:scheduled` |
+| Where | GitHub `main`; byte-identical copies of the imported files in the workspace checkout on the sync host (`~/Documents/Github/music-soup-server`) | `~/music-soup-server` on the sync host, the tree `com.music-soup.scheduled-sync` runs at 09/13/18 via `npm run sync:scheduled` |
 | Base commit | `fbabb02` (September hardening imported) + `a0cced7` (fix 5) | `dfd1907` + uncommitted refactor, snapshotted verbatim in this branch |
 | Matching | ordered lookups: `TrackIdentityIndex.find` (platform ID, ISRC, title/artist) and `findTrackByIdentity` (platform ID query, ISRC query, URL query, title query) | one pure decision, `decideTrackMatch` in `utils/trackMatchDecision.js`, used by both the in-memory index and the live pre-create lookup over a full validated snapshot |
 | Removal | `cleanupRemovedTracks` sets the legacy `Removed` checkbox when a page is not in any current playlist | `cleanupRemovedTracks` never writes `Removed` (`markTrackRemoved` throws); it reports per-page membership state and, when `NOTION_MEMBERSHIP_DB_ID` is set, records per-playlist memberships in a separate database |
