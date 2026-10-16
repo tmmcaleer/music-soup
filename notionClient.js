@@ -234,7 +234,9 @@ async function findTrackByTitleArtist(title, artist) {
  */
 async function findTrackByIdentity(trackData) {
   // The final check must also see duplicate/contradictory identities, including
-  // legacy rows whose persisted IDs do not match their displayed URL.
+  // legacy rows whose persisted IDs do not match their displayed URL. It uses
+  // the same decision as the in-memory index: platform track ID first, ISRC
+  // only as a cross-service hint when no page carries that platform ID.
   const pages = await queryAllDatabase();
   const decision = decideTrackMatch(trackData, pages);
   if (decision.outcome === 'review') throw new TrackIdentityReviewError(decision);

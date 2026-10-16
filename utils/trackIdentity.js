@@ -165,6 +165,8 @@ class TrackIdentityIndex {
 
   decide(trackData) {
     // Lazy import avoids a cycle with the pure normalizers above.
+    // decideTrackMatch checks the platform track ID before ISRC; ISRC and
+    // title are only consulted when no record carries the incoming platform ID.
     return require('./trackMatchDecision').decideTrackMatch(trackData, this.records);
   }
 

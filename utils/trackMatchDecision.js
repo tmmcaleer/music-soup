@@ -113,18 +113,27 @@ function decideTrackMatch(trackData, records) {
   }
   const unique = new Map();
   records.forEach((record, i) => unique.set(record.id || 'anonymous:' + i, record));
-  const candidates = [...unique.values()].filter(record => {
-    const f = trackFacts(record);
-    return (incoming.platformId && incoming.platformId === f.platformId)
-      || (incoming.isrc && incoming.isrc === f.isrc)
-      || (incoming.title && incoming.title === f.title);
-  }).map(record => compareCandidate(incoming, record));
-  if (!candidates.length) return { outcome: 'new', reasons: [], candidates: [] };
-  if (candidates.length > 1) return { outcome: 'review', reasons: ['multiple_candidates'], candidates };
+  const known = [...unique.values()].map(record => ({ record, facts: trackFacts(record) }));
+
+  // The platform track ID (spotify:<id> / appleMusic:<id>) names one catalogue
+  // entry on one service, so it is checked first and on its own. ISRC is only a
+  // cross-service hint: labels reuse one ISRC across different recordings and
+  // split one recording across several ISRCs. Pages that share the incoming
+  // ISRC or title are therefore consulted only when no page carries the
+  // incoming platform ID; they never compete with an exact provider match.
+  const byPlatformId = known.filter(({ facts }) => incoming.platformId === facts.platformId);
+  const byIsrcOrTitle = known.filter(({ facts }) => (incoming.isrc && incoming.isrc === facts.isrc)
+    || (incoming.title && incoming.title === facts.title));
+  const identityTier = byPlatformId.length ? 'platform_track_id' : 'isrc_or_title';
+  const candidates = (byPlatformId.length ? byPlatformId : byIsrcOrTitle)
+    .map(({ record }) => compareCandidate(incoming, record));
+
+  if (!candidates.length) return { outcome: 'new', reasons: [], candidates: [], identityTier };
+  if (candidates.length > 1) return { outcome: 'review', reasons: ['multiple_candidates'], candidates, identityTier };
   const candidate = candidates[0];
-  if (candidate.reasons.length) return { outcome: 'review', reasons: candidate.reasons, candidates };
+  if (candidate.reasons.length) return { outcome: 'review', reasons: candidate.reasons, candidates, identityTier };
   return {
-    outcome: 'match', reasons: [], candidates,
+    outcome: 'match', reasons: [], candidates, identityTier,
     record: candidate.record, recordId: candidate.recordId,
     removed: candidate.existing.removed, evidence: candidate.evidence,
   };
