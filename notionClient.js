@@ -174,17 +174,19 @@ async function findTrackByTitleArtist(title, artist) {
 async function findTrackByIdentity(trackData) {
   const incoming = identityFromTrackData(trackData);
 
-  if (incoming.isrc) {
-    const isrcMatch = await findTrackByIsrc(incoming.isrc);
-    if (isrcMatch) return isrcMatch;
-  }
-
+  // Platform track ID first: it names one catalogue entry on one service.
+  // ISRC is a cross-service hint and can be shared by different recordings.
   if (incoming.platformTrackId) {
     const platformMatches = await queryDatabase({
       property: NOTION_FIELDS.PLATFORM_TRACK_ID,
       rich_text: { equals: incoming.platformTrackId },
     });
     if (platformMatches.length > 0) return platformMatches[0];
+  }
+
+  if (incoming.isrc) {
+    const isrcMatch = await findTrackByIsrc(incoming.isrc);
+    if (isrcMatch) return isrcMatch;
   }
 
   if (trackData.url) {

@@ -440,13 +440,15 @@ async function cleanupRemovedTracks(context) {
       );
     }
 
-    // Create set of current track identifiers
+    // Create set of current track identifiers. A page counts as present only
+    // by platform track ID or ISRC; title/artist is not identity, so a
+    // different recording of the same song in a playlist no longer keeps a
+    // removed recording's page unflagged.
     const currentTrackIds = new Set();
     syncContext.currentPlaylistTracks.forEach(track => {
       const identity = identityFromTrackData(track);
-      if (identity.isrc) currentTrackIds.add(`isrc:${identity.isrc}`);
       if (identity.platformTrackId) currentTrackIds.add(`platform:${identity.platformTrackId}`);
-      if (identity.titleArtist) currentTrackIds.add(`title:${identity.titleArtist}`);
+      if (identity.isrc) currentTrackIds.add(`isrc:${identity.isrc}`);
     });
 
     // Check each Notion track
@@ -466,20 +468,14 @@ async function cleanupRemovedTracks(context) {
         }
 
         let trackExists = false;
-        
-        // Check by ISRC first
-        if (identity.isrc && currentTrackIds.has(`isrc:${identity.isrc}`)) {
-          trackExists = true;
-        }
 
-        if (!trackExists && identity.platformTrackId
+        // Check by platform track ID first, then ISRC. No title/artist fallback.
+        if (identity.platformTrackId
           && currentTrackIds.has(`platform:${identity.platformTrackId}`)) {
           trackExists = true;
         }
-        
-        // Check by title/artist
-        if (!trackExists && identity.titleArtist
-          && currentTrackIds.has(`title:${identity.titleArtist}`)) {
+
+        if (!trackExists && identity.isrc && currentTrackIds.has(`isrc:${identity.isrc}`)) {
           trackExists = true;
         }
 

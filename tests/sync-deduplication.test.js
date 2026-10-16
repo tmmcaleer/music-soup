@@ -35,7 +35,7 @@ jest.mock('../utils/logger', () => ({
 
 const { NOTION_FIELDS } = require('../schema');
 const { NotionOperationError } = require('../utils/notionRetry');
-const { syncAllPlaylists } = require('../syncOrchestrator');
+const { syncAllPlaylists, cleanupRemovedTracks, createSyncContext } = require('../syncOrchestrator');
 
 function richText(value) {
   return [{ plain_text: value, text: { content: value } }];
@@ -94,9 +94,15 @@ beforeEach(() => {
   mockAppleMusicClient.getPlaylistTracks.mockResolvedValue([]);
   mockNotionClient.queryAllDatabase.mockResolvedValue([]);
   mockNotionClient.findTrackByIdentity.mockResolvedValue(null);
-  mockNotionClient.createTrack.mockImplementation(async (track) => ({
+  // A real create returns the page with its properties; the snapshot and the
+  // cleanup pass rely on them, so the mock returns the same shape.
+  mockNotionClient.createTrack.mockImplementation(async (track) => notionPage({
     id: `created-${track.sourceId}`,
-    properties: {},
+    title: track.title,
+    artist: track.artist,
+    isrc: track.isrc,
+    platformTrackId: `spotify:${track.sourceId}`,
+    url: track.url,
   }));
   mockNotionClient.markTrackRemoved.mockResolvedValue({});
 });
@@ -170,6 +176,36 @@ describe('run-scoped synchronization deduplication', () => {
     expect(mockNotionClient.createTrack).toHaveBeenCalledTimes(1);
   });
 
+  test('skips by platform ID when a shared ISRC points at a different page', async () => {
+    const track = spotifyTrack({ sourceId: 'repackaged', isrc: 'USSHARED00001' });
+    mockConfig.getAllConfiguredPlaylists.mockReturnValue([
+      { service: 'spotify', id: 'spotify-source', key: 'source', type: 'Source' },
+    ]);
+    mockNotionClient.queryAllDatabase.mockResolvedValue([
+      notionPage({
+        id: 'original-release', title: track.title, artist: track.artist,
+        isrc: 'USSHARED00001', platformTrackId: 'spotify:original',
+        url: 'https://open.spotify.com/track/original',
+      }),
+      notionPage({
+        id: 'repackaged-release', title: track.title, artist: track.artist,
+        isrc: 'USSHARED00001', platformTrackId: 'spotify:repackaged',
+        url: 'https://open.spotify.com/track/repackaged',
+      }),
+    ]);
+    mockSpotifyClient.getPlaylistTracks.mockResolvedValue([track]);
+    const debug = require('../utils/logger').debug;
+
+    const summary = await syncAllPlaylists();
+
+    expect(summary.spotify.skipped).toBe(1);
+    expect(mockNotionClient.createTrack).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledWith(
+      expect.stringContaining('Skipped existing track'),
+      expect.objectContaining({ pageId: 'repackaged-release' })
+    );
+  });
+
   test('propagates a fatal snapshot failure before touching provider APIs', async () => {
     const fatal = new NotionOperationError('catalog snapshot', new Error('Notion unavailable'));
     mockConfig.getAllConfiguredPlaylists.mockReturnValue([
@@ -212,5 +248,64 @@ describe('run-scoped synchronization deduplication', () => {
     await expect(syncAllPlaylists()).rejects.toBe(fatal);
 
     expect(mockNotionClient.createTrack).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('removal detection identity', () => {
+  const present = spotifyTrack({ sourceId: 'present-id', isrc: 'USPRESENT0001', url: 'https://open.spotify.com/track/present-id' });
+
+  async function runCleanup(pages) {
+    mockConfig.getAllConfiguredPlaylists.mockReturnValue([
+      { service: 'spotify', id: 'spotify-source', key: 'source', type: 'Source' },
+    ]);
+    mockNotionClient.queryAllDatabase.mockResolvedValue(pages);
+    mockSpotifyClient.getPlaylistTracks.mockResolvedValue([present]);
+    const context = await createSyncContext();
+    await syncAllPlaylists(context);
+    return cleanupRemovedTracks(context);
+  }
+
+  test('a page is present by platform track ID', async () => {
+    const results = await runCleanup([
+      notionPage({ id: 'by-platform', title: 'Other Title', artist: 'Other Artist', isrc: '', platformTrackId: 'spotify:present-id', url: '' }),
+    ]);
+    expect(results.marked).toBe(0);
+    expect(mockNotionClient.markTrackRemoved).not.toHaveBeenCalled();
+  });
+
+  test('a page is present by ISRC when it has no platform track ID', async () => {
+    const results = await runCleanup([
+      notionPage({ id: 'by-isrc', title: 'Other Title', artist: 'Other Artist', isrc: 'USPRESENT0001', platformTrackId: '', url: '' }),
+    ]);
+    expect(results.marked).toBe(0);
+    expect(mockNotionClient.markTrackRemoved).not.toHaveBeenCalled();
+  });
+
+  test('same title and artist alone no longer keeps a different recording present', async () => {
+    const results = await runCleanup([
+      notionPage({
+        id: 'other-recording', title: present.title, artist: present.artist,
+        isrc: 'USOTHER000001', platformTrackId: 'spotify:other-recording',
+        url: 'https://open.spotify.com/track/other-recording',
+      }),
+      notionPage({
+        id: 'no-identity-at-all', title: present.title, artist: present.artist,
+        isrc: '', platformTrackId: '', url: '',
+      }),
+    ]);
+    expect(results.marked).toBe(2);
+    expect(mockNotionClient.markTrackRemoved).toHaveBeenCalledWith('other-recording');
+    expect(mockNotionClient.markTrackRemoved).toHaveBeenCalledWith('no-identity-at-all');
+  });
+
+  test('already removed pages and manual Link Only pages are left alone', async () => {
+    const manual = notionPage({ id: 'manual', title: 'Manual', artist: 'Someone', isrc: '', platformTrackId: '', url: '' });
+    manual.properties[NOTION_FIELDS.SOURCE] = { select: { name: 'Link Only' } };
+    const results = await runCleanup([
+      manual,
+      notionPage({ id: 'already-removed', title: 'Gone', artist: 'Someone', isrc: '', platformTrackId: 'spotify:gone', url: '', removed: true }),
+    ]);
+    expect(results.marked).toBe(0);
+    expect(mockNotionClient.markTrackRemoved).not.toHaveBeenCalled();
   });
 });

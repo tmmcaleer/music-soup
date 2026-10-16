@@ -200,12 +200,16 @@ class TrackIdentityIndex {
   find(trackData) {
     const identity = identityFromTrackData(trackData);
 
-    if (identity.isrc && this.byIsrc.has(identity.isrc)) {
-      return this.byIsrc.get(identity.isrc);
-    }
-
+    // The platform track ID names one catalogue entry on one service. ISRC is
+    // only a cross-service hint: labels reuse one ISRC across different
+    // recordings and split one recording across several ISRCs, so it is
+    // consulted after the platform ID.
     if (identity.platformTrackId && this.byPlatformTrackId.has(identity.platformTrackId)) {
       return this.byPlatformTrackId.get(identity.platformTrackId);
+    }
+
+    if (identity.isrc && this.byIsrc.has(identity.isrc)) {
+      return this.byIsrc.get(identity.isrc);
     }
 
     if (!identity.titleArtist) return null;
