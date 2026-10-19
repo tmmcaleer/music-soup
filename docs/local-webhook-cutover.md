@@ -111,6 +111,7 @@ Fill in the existing sync values from GitHub Secrets:
 - `SYNC_INTERVAL_MINUTES`
 - `LOG_LEVEL`
 - `DRY_RUN`
+- `REMOVED_FLAG_POLICY` (optional, `ignore` by default)
 
 Add the local webhook values:
 

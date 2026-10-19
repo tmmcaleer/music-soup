@@ -115,7 +115,7 @@ const DATABASE_SCHEMA = {
     type: NOTION_PROPERTY_TYPES.MULTI_SELECT,
     required: true,
     automated: true,
-    options: ['Source', 'Temp'],
+    options: ['Source', 'TEMP', 'Score'], // matches the live Music Options multi_select
   },
   [NOTION_FIELDS.CREATED_TIME]: {
     type: NOTION_PROPERTY_TYPES.CREATED_TIME,

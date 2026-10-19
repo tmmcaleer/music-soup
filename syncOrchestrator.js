@@ -411,6 +411,15 @@ async function syncAppleMusicPlaylist(playlistId, playlistType = 'Source', conte
 }
 
 /**
+ * The legacy Removed checkbox was mass-set by a misconfigured run and no human
+ * maintains it, so by default a Removed page that is back in a playlist is an
+ * ordinary match. REMOVED_FLAG_POLICY=review restores the reactivation review.
+ */
+function removedForcesReview() {
+  return config.config.removedFlagPolicy === 'review';
+}
+
+/**
  * Sync a single track to Notion database
  * @param {Object} trackData - Normalized track data from music service
  * @returns {Promise<string>} - Result: 'created', 'updated', or 'skipped'
@@ -428,7 +437,7 @@ async function syncTrackToNotion(trackData, context) {
     }
     if (existingTrack) {
       recordMembership(syncContext, existingTrack.id, trackData);
-      if (trackFacts(existingTrack).removed) {
+      if (removedForcesReview() && trackFacts(existingTrack).removed) {
         addProposal(syncContext, {
           kind: 'review_reactivation', pageId: existingTrack.id,
           sourceId: trackFacts(trackData).platformId,
@@ -482,7 +491,7 @@ async function cleanupRemovedTracks(context) {
     const decision = syncContext.identityIndex.decide(track);
     if (decision.outcome !== 'match') continue;
     recordMembership(syncContext, decision.recordId, track);
-    if (decision.removed) addProposal(syncContext, {
+    if (removedForcesReview() && decision.removed) addProposal(syncContext, {
       kind: 'review_reactivation', pageId: decision.recordId,
       sourceId: trackFacts(track).platformId,
       reasons: ['present_in_current_playlist_but_legacy_removed'], requiresApproval: true,
