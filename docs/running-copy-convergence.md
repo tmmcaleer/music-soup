@@ -72,8 +72,12 @@ ISRC and removes the title/artist fallback from removal detection. In the runnin
 ## How the two lines converge
 
 1. Merge this branch into `main`. `main` then equals the running copy plus the ported
-   fix and tests; main's three imported suites are not carried because they test the
-   replaced `TrackIdentityIndex` maps and the legacy `Removed` write path.
+   fix and tests. Of main's three imported suites, `tests/notion-retry.test.js` is kept
+   (`utils/notionRetry.js` is identical); `tests/track-identity.test.js` and
+   `tests/sync-deduplication.test.js` are dropped because they test the replaced
+   `TrackIdentityIndex` maps and the legacy `Removed` write path. Main's docs commits
+   (`docs/local-webhook-cutover.md`, `docs/server-agent-handoff-prompt.md`, the
+   local-webhook plist) and the `.music-soup-sync.lock` ignore entry are carried.
 2. Cut `~/music-soup-server` over to the merged `main` (fast-forward; its working tree is
    byte-identical to the snapshot commit, so nothing is lost).
 3. Fast-forward the workspace share `~/Documents/Github/music-soup-server` to the same

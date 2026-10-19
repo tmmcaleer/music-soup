@@ -1,6 +1,6 @@
 # Local Webhook Cutover
 
-This document is the Phase 1 handoff for moving **Notion-triggered** syncs off Fly.io and onto the local machine at `/volumes/music_soup`.
+This document is the Phase 1 handoff for moving **Notion-triggered** syncs off Fly.io and onto the local machine at `/Volumes/music-soup-server`.
 
 Phase 1 scope is intentionally narrow:
 
@@ -10,46 +10,87 @@ Phase 1 scope is intentionally narrow:
 
 ## Target State
 
-- Repo location: `/volumes/music_soup`
+- Repo location: `/Volumes/music-soup-server`
 - Runtime: plain Node.js on macOS
 - Public ingress: `ngrok http <WEBHOOK_PORT>`
 - Local webhook server: `npm run webhook:local`
 - Local webhook endpoint: `http://127.0.0.1:<WEBHOOK_PORT>/notion-webhook`
 - Local health endpoint: `http://127.0.0.1:<WEBHOOK_PORT>/health`
 
-## 1. Pull The Repo On The Target Machine
+## 1. Replace The Old Shim With The Real Repo
 
-If `/volumes/music_soup` is not a clone yet:
+Current observed state on the target machine:
+
+- `/Volumes/music-soup-server` exists
+- it contains the old standalone `webhook-server.js` shim
+- its `.env` only covers the old GitHub-dispatch path
+- on the mounted copy inspected during planning, it was an unconnected `git init`, not a usable clone of this repo
+
+Before deleting anything, inspect whether the remote machine has accidentally wired this folder to some other repository:
 
 ```bash
-cd /volumes
-git clone git@github.com:tmmcaleer/music-soup.git music_soup
+cd /Volumes/music-soup-server
+git status --short --branch || true
+git remote -v || true
+git log --oneline -5 || true
 ```
 
-If it already exists:
+If `git remote -v` shows any remote, or `git log` shows commits that do not belong to `tmmcaleer/music-soup`, record that output and then remove the old `.git` directory during replacement. This folder must end up as a clone of the real `music-soup` repository, not a separate repo.
+
+Back up the old shim `.env` before replacing the folder contents:
 
 ```bash
-cd /volumes/music_soup
+cp /Volumes/music-soup-server/.env "$HOME/music-soup-server-shim.env.backup"
+```
+
+Clear the old shim contents:
+
+```bash
+cd /Volumes/music-soup-server
+find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+```
+
+Clone the real repo into the now-empty folder:
+
+```bash
+cd /Volumes/music-soup-server
+git clone git@github.com:tmmcaleer/music-soup.git .
+```
+
+If the folder has already been converted into a real clone, use:
+
+```bash
+cd /Volumes/music-soup-server
 git pull --ff-only
 ```
 
 Install dependencies:
 
 ```bash
-cd /volumes/music_soup
+cd /Volumes/music-soup-server
 npm ci
 ```
 
 ## 2. Build The Local `.env`
 
-Use the current GitHub repository secrets as the source of truth and mirror them into `/volumes/music_soup/.env`.
+Use the current GitHub repository secrets as the source of truth and mirror them into `/Volumes/music-soup-server/.env`.
 
 Start from `env.example`:
 
 ```bash
-cd /volumes/music_soup
+cd /Volumes/music-soup-server
 cp env.example .env
 ```
+
+Do not reuse the old shim `.env` as-is. It only contains:
+
+- `GITHUB_TOKEN`
+- `GITHUB_OWNER`
+- `GITHUB_REPO`
+- `WEBHOOK_PORT`
+- `WEBHOOK_SECRET`
+
+It does not contain the Notion, Spotify, or Apple Music credentials required for direct local sync.
 
 Fill in the existing sync values from GitHub Secrets:
 
@@ -83,7 +124,7 @@ Use a high-entropy `WEBHOOK_SECRET`. The same value must be configured as the `x
 Run the existing integration test script with the real `.env`:
 
 ```bash
-cd /volumes/music_soup
+cd /Volumes/music-soup-server
 node tests/integration-test.js
 ```
 
@@ -94,7 +135,7 @@ Do not continue until Spotify, Notion, and any enabled Apple Music playlist acce
 First run it in the foreground:
 
 ```bash
-cd /volumes/music_soup
+cd /Volumes/music-soup-server
 npm run webhook:local
 ```
 
@@ -195,11 +236,9 @@ Copy the committed template into your LaunchAgents directory:
 
 ```bash
 mkdir -p ~/Library/LaunchAgents
-cp /volumes/music_soup/deployment/com.music-soup.local-webhook.plist \
+cp /Volumes/music-soup-server/deployment/com.music-soup.local-webhook.plist \
   ~/Library/LaunchAgents/com.music-soup.local-webhook.plist
 ```
-
-Load it:
 
 ```bash
 launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.music-soup.local-webhook.plist
@@ -214,8 +253,8 @@ launchctl print "gui/$(id -u)/com.music-soup.local-webhook"
 
 Logs:
 
-- Standard output: `/volumes/music_soup/local-webhook.stdout.log`
-- Standard error: `/volumes/music_soup/local-webhook.stderr.log`
+- Standard output: `/Volumes/music-soup-server/local-webhook.stdout.log`
+- Standard error: `/Volumes/music-soup-server/local-webhook.stderr.log`
 
 To stop it later:
 
@@ -298,3 +337,12 @@ launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/com.music-soup.local-web
 5. Leave GitHub manual sync available while debugging the local machine.
 
 Rollback is complete when Notion points back to Fly.io and no traffic is expected to hit the local webhook.
+
+## Post-Cutover Cleanup
+
+Once the local path has succeeded and you are comfortable leaving Fly.io behind:
+
+1. Keep `.github/workflows/sync-music.yml` enabled because it is still the manual fallback.
+2. Disable the `Fly Deploy` workflow in GitHub Actions or remove `.github/workflows/fly-deploy.yml` in a later repo change.
+3. Stop routing Notion traffic to the old Fly.io webhook endpoint.
+4. Scale the Fly app to zero or remove it only after the ngrok-backed local path has been stable for a while.

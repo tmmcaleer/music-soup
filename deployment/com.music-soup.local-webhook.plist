@@ -6,13 +6,13 @@
   <string>com.music-soup.local-webhook</string>
 
   <key>WorkingDirectory</key>
-  <string>/volumes/music_soup</string>
+  <string>/Volumes/music-soup-server</string>
 
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd /volumes/music_soup &amp;&amp; npm run webhook:local</string>
+    <string>cd /Volumes/music-soup-server &amp;&amp; npm run webhook:local</string>
   </array>
 
   <key>EnvironmentVariables</key>
@@ -31,9 +31,9 @@
   <string>Background</string>
 
   <key>StandardOutPath</key>
-  <string>/volumes/music_soup/local-webhook.stdout.log</string>
+  <string>/Volumes/music-soup-server/local-webhook.stdout.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/volumes/music_soup/local-webhook.stderr.log</string>
+  <string>/Volumes/music-soup-server/local-webhook.stderr.log</string>
 </dict>
 </plist>
