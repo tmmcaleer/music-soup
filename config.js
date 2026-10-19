@@ -124,12 +124,27 @@ function getAllConfiguredPlaylists() {
   return playlists;
 }
 
+const REMOVED_FLAG_POLICIES = ['ignore', 'review'];
+
+function parseRemovedFlagPolicy(value) {
+  const policy = String(value || '').trim().toLowerCase();
+  if (!REMOVED_FLAG_POLICIES.includes(policy)) {
+    throw new Error(`REMOVED_FLAG_POLICY must be one of ${REMOVED_FLAG_POLICIES.join(', ')}, got "${value}"`);
+  }
+  return policy;
+}
+
 // General Configuration
 const config = {
   syncIntervalMinutes: parseInt(getEnv('SYNC_INTERVAL_MINUTES', '5')),
   logLevel: getEnv('LOG_LEVEL', 'info'),
   dryRun: getEnv('DRY_RUN', 'false').toLowerCase() === 'true',
   syncTimezone: getEnv('SYNC_TIMEZONE', 'America/New_York'),
+  // What the sync does when a playlist track matches a page whose legacy
+  // Removed checkbox is set. 'ignore' (default): treat it like any other
+  // existing page (membership recorded, result 'skipped'). 'review': the
+  // pre-2026-10 behaviour, a review_reactivation proposal and result 'review'.
+  removedFlagPolicy: parseRemovedFlagPolicy(getEnv('REMOVED_FLAG_POLICY', 'ignore')),
 };
 
 module.exports = {
@@ -140,4 +155,5 @@ module.exports = {
   getAllConfiguredPlaylists,
   requireEnv,
   getEnv,
+  REMOVED_FLAG_POLICIES,
 };

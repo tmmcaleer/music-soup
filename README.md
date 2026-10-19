@@ -44,7 +44,7 @@ Uses ISRC (International Standard Recording Code) as primary key for matching tr
 - **Schema mismatches**: Graceful handling of missing/changed Notion properties
 
 ### Automated Cleanup
-Tracks removed from playlists are marked as "removed" in Notion rather than deleted, preserving historical data for music supervision workflows.
+Playlist membership is tracked per playlist; the sync never writes the legacy `Removed` checkbox. A page that is flagged `Removed` but present in a playlist is treated as a normal match unless `REMOVED_FLAG_POLICY=review` is set, which routes it to a reactivation review instead.
 
 ## 🚀 Deployment
 

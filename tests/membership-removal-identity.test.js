@@ -5,10 +5,13 @@
  * it reports per-page membership state. A page counts as present only through
  * the matcher: by platform track ID, or by ISRC as a cross-service hint.
  * Title and artist alone never make a page present.
+ *
+ * The legacy Removed checkbox is read-only and, by default, does not change
+ * the outcome of a match (REMOVED_FLAG_POLICY=ignore).
  */
 const mockConfig = {
   notion: { apiKey: 'test-key', databaseId: 'music-db', membershipDatabaseId: '' },
-  config: { dryRun: false, logLevel: 'error' },
+  config: { dryRun: false, logLevel: 'error', removedFlagPolicy: 'ignore' },
   getAllConfiguredPlaylists: jest.fn(),
 };
 const mockSpotifyClient = { checkServiceHealth: jest.fn(), getPlaylist: jest.fn(), getPlaylistTracks: jest.fn() };
@@ -32,6 +35,7 @@ const present = spotifyTrack({ sourceId: 'presentid', isrc: 'USPRESENT0001' });
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockConfig.config.removedFlagPolicy = 'ignore';
   mockConfig.getAllConfiguredPlaylists.mockReturnValue([
     { service: 'spotify', id: 'spotify-source', key: 'source', type: 'Source' },
   ]);
@@ -108,12 +112,32 @@ describe('removal detection identity', () => {
     expect(cleanup.mutationPolicy).toBe('per_playlist_memberships_only_legacy_fields_read_only');
   });
 
-  test('a legacy-removed page matched by platform ID is proposed for reactivation review', async () => {
-    const { state, context } = await runCleanup([
+  test('a legacy-removed page matched by platform ID is an ordinary match by default', async () => {
+    const { state, summary, context, cleanup } = await runCleanup([
+      notionPage({ id: 'legacy-removed', isrc: 'USPRESENT0001', platformTrackId: 'spotify:presentid', url: present.url, removed: true }),
+    ]);
+    // Membership is recorded and the track is skipped, exactly like a non-removed page.
+    expect(state['legacy-removed']).toBe('present');
+    expect(summary.spotify.skipped).toBe(1);
+    expect(summary.spotify.review).toBe(0);
+    expect(context.proposals).toEqual([]);
+    expect(cleanup.observations[0].legacyRemoved).toBe(true);
+    expect(mockNotionClient.createTrack).not.toHaveBeenCalled();
+    // The flag itself is still never written in either direction.
+    expect(mockNotionClient.markTrackRemoved).not.toHaveBeenCalled();
+  });
+
+  test('REMOVED_FLAG_POLICY=review restores the reactivation review proposal', async () => {
+    mockConfig.config.removedFlagPolicy = 'review';
+    const { state, summary, context } = await runCleanup([
       notionPage({ id: 'legacy-removed', isrc: 'USPRESENT0001', platformTrackId: 'spotify:presentid', url: present.url, removed: true }),
     ]);
     expect(state['legacy-removed']).toBe('present');
+    expect(summary.spotify.review).toBe(1);
+    expect(summary.spotify.skipped).toBe(0);
     expect(context.proposals.map(p => p.kind)).toEqual(['review_reactivation']);
+    expect(context.proposals[0].pageId).toBe('legacy-removed');
+    expect(context.proposals[0].reasons).toEqual(['present_in_current_playlist_but_legacy_removed']);
     expect(mockNotionClient.markTrackRemoved).not.toHaveBeenCalled();
   });
 
