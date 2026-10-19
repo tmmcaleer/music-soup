@@ -2,6 +2,7 @@ const {
   getTotalAdded,
   shouldPostComment,
   formatTrackLine,
+  formatTrackList,
   buildCommentText,
   buildCommentRichText,
   pickQuip,
@@ -32,10 +33,10 @@ describe('scheduled sync comment helpers', () => {
     expect(line).toBe('• Test Song — Test Artist (Spotify / Source)');
   });
 
-  test('pickQuip returns mildly quippy copy', () => {
+  test('pickQuip returns casual copy', () => {
     const quip = pickQuip(2, new Date('2026-07-08T13:00:00.000Z'));
-    expect(quip).toMatch(/track/i);
-    expect(quip).not.toMatch(/^Music Soup sync/);
+    expect(quip).toMatch(/added|showed up|landed|fyi/i);
+    expect(quip).not.toMatch(/soup|broth|patrol/i);
   });
 
   test('buildCommentText formats header and track list', () => {
@@ -59,7 +60,7 @@ describe('scheduled sync comment helpers', () => {
       timeZone: 'America/New_York',
     });
 
-    expect(text).toContain('Music Soup sync —');
+    expect(text).toContain('Hey —');
     expect(text).toContain('• Song A — Artist A (Spotify / Source)');
     expect(text).toContain('• Song B — Artist B (Apple Music / Temp)');
   });
@@ -94,12 +95,12 @@ describe('scheduled sync comment helpers', () => {
       return '';
     }).join('');
 
-    expect(body).toContain('Music Soup sync —');
+    expect(body).toContain('Heyo ');
     expect(body).toContain('@Lynne');
     expect(body).toContain('• Song A — Artist A (Spotify / Source)');
   });
 
-  test('buildCommentText truncates long track lists', () => {
+  test('buildCommentText omits track list for large batches', () => {
     const newTracks = Array.from({ length: 30 }, (_, index) => ({
       title: `Song ${index + 1}`,
       artist: 'Artist',
@@ -114,7 +115,42 @@ describe('scheduled sync comment helpers', () => {
       timeZone: 'America/New_York',
     });
 
-    expect(text).toContain('…and 5 more');
-    expect(text).not.toContain('Song 30');
+    expect(text).toContain('30 new tracks');
+    expect(text).not.toContain('Song 1');
+    expect(text).not.toContain('•');
+  });
+
+  test('buildCommentText lists up to 10 tracks', () => {
+    const newTracks = Array.from({ length: 10 }, (_, index) => ({
+      title: `Song ${index + 1}`,
+      artist: 'Artist',
+      service: 'spotify',
+      playlistType: 'Source',
+    }));
+
+    const text = buildCommentText({
+      newTracks,
+      totalAdded: 10,
+      syncDate: new Date('2026-07-08T13:00:00.000Z'),
+      timeZone: 'America/New_York',
+    });
+
+    expect(text).toContain('Song 1');
+    expect(text).toContain('Song 10');
+  });
+
+  test('formatTrackList truncates past MAX_TRACK_LINES with a remainder note', () => {
+    const newTracks = Array.from({ length: 30 }, (_, index) => ({
+      title: `Song ${index + 1}`,
+      artist: 'Artist',
+      service: 'spotify',
+      playlistType: 'Source',
+    }));
+
+    const list = formatTrackList(newTracks);
+
+    expect(list).toContain('• Song 25 — Artist (Spotify / Source)');
+    expect(list).not.toContain('Song 26');
+    expect(list).toContain('…and 5 more');
   });
 });
