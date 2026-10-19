@@ -13,7 +13,9 @@ const config = require('./config');
 const { NOTION_FIELDS, formatRichText, formatTitle, formatDate, formatDuration, formatReleaseYear, formatSelect, formatUrl, formatNumber, formatCheckbox, formatMultiSelect } = require('./schema');
 const { NOTION } = require('./endpoints');
 const logger = require('./utils/logger');
-const { withNotionRetry } = require('./utils/notionRetry');
+const { assertWriteAllowed } = require('./utils/mutationGuard');
+const { withNotionRetry, NotionOperationError } = require('./utils/notionRetry');
+const { decideTrackMatch, TrackIdentityReviewError } = require('./utils/trackMatchDecision');
 const {
   buildPlatformTrackId,
   identityFromNotionPage,
@@ -59,6 +61,52 @@ async function queryDatabase(filters = {}) {
 }
 
 /**
+ * Reject partial page objects before they can hide an existing identity.
+ * Empty property values are valid; missing or malformed containers are not.
+ */
+function validateInventoryPage(page, seenPageIds) {
+  const fail = reason => { throw new NotionOperationError('database snapshot', new Error(reason)); };
+  const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!isObject(page) || page.object !== 'page' || typeof page.id !== 'string' || !page.id.trim() || !isObject(page.properties)) {
+    fail('Missing or malformed Notion page identity/properties');
+  }
+  if (seenPageIds.has(page.id)) fail('Duplicate Notion page ID in database snapshot: ' + page.id);
+  seenPageIds.add(page.id);
+
+  const required = [
+    [NOTION_FIELDS.TRACK_TITLE, 'title'], [NOTION_FIELDS.ARTIST, 'rich_text'],
+    [NOTION_FIELDS.ALBUM, 'rich_text'], [NOTION_FIELDS.ISRC_UPC, 'rich_text'],
+    [NOTION_FIELDS.PLATFORM_TRACK_ID, 'rich_text'], [NOTION_FIELDS.DURATION, 'rich_text'],
+    [NOTION_FIELDS.TRACK_NUMBER, 'number'], [NOTION_FIELDS.URL, 'url'],
+    [NOTION_FIELDS.REMOVED, 'checkbox'], [NOTION_FIELDS.SOURCE, 'select'],
+  ];
+  if ('Disc Number' in page.properties) required.push(['Disc Number', 'number']);
+  for (const [name, type] of required) {
+    const property = page.properties[name];
+    if (!isObject(property) || (property.type !== undefined && property.type !== type) || property.has_more === true) {
+      fail('Missing, malformed or truncated Notion property: ' + name);
+    }
+    const value = property[type];
+    let valid;
+    if (type === 'title' || type === 'rich_text') {
+      valid = Array.isArray(value) && value.every(item => isObject(item)
+        && (typeof item.plain_text === 'string' || typeof item.text?.content === 'string')
+        && (item.plain_text === undefined || typeof item.plain_text === 'string')
+        && (item.text === undefined || (isObject(item.text) && typeof item.text.content === 'string')));
+    } else if (type === 'number') {
+      valid = value === null || (typeof value === 'number' && Number.isFinite(value));
+    } else if (type === 'url') {
+      valid = value === null || typeof value === 'string';
+    } else if (type === 'checkbox') {
+      valid = typeof value === 'boolean';
+    } else if (type === 'select') {
+      valid = value === null || (isObject(value) && typeof value.name === 'string');
+    }
+    if (!valid) fail('Missing or malformed Notion property value: ' + name);
+  }
+}
+
+/**
  * Query all pages in the database, following pagination.
  * @param {Object} [filters]
  * @returns {Promise<Array>}
@@ -66,6 +114,8 @@ async function queryDatabase(filters = {}) {
 async function queryAllDatabase(filters) {
   const results = [];
   let cursor;
+  const seenCursors = new Set();
+  const seenPageIds = new Set();
 
   do {
     const query = {
@@ -90,8 +140,19 @@ async function queryAllDatabase(filters) {
       { mode: 'read' }
     );
 
+    if (!response || !Array.isArray(response.results) || response.results.length > query.page_size || typeof response.has_more !== 'boolean') {
+      throw new NotionOperationError('database snapshot', new Error('Missing result page or invalid pagination state'));
+    }
+    if (response.has_more && (typeof response.next_cursor !== 'string' || !response.next_cursor.trim() || seenCursors.has(response.next_cursor))) {
+      throw new NotionOperationError('database snapshot', new Error('Incomplete or repeated pagination cursor'));
+    }
+    if ((!response.has_more && response.next_cursor !== null) || (response.has_more && response.results.length === 0)) {
+      throw new NotionOperationError('database snapshot', new Error('Inconsistent pagination state'));
+    }
+    response.results.forEach(page => validateInventoryPage(page, seenPageIds));
     results.push(...response.results);
     cursor = response.has_more ? response.next_cursor : undefined;
+    if (cursor) seenCursors.add(cursor);
   } while (cursor);
 
   logger.debug('Queried all Notion database pages', {
@@ -172,53 +233,14 @@ async function findTrackByTitleArtist(title, artist) {
  * @returns {Promise<Object|null>}
  */
 async function findTrackByIdentity(trackData) {
-  const incoming = identityFromTrackData(trackData);
-
-  // Platform track ID first: it names one catalogue entry on one service.
-  // ISRC is a cross-service hint and can be shared by different recordings.
-  if (incoming.platformTrackId) {
-    const platformMatches = await queryDatabase({
-      property: NOTION_FIELDS.PLATFORM_TRACK_ID,
-      rich_text: { equals: incoming.platformTrackId },
-    });
-    if (platformMatches.length > 0) return platformMatches[0];
-  }
-
-  if (incoming.isrc) {
-    const isrcMatch = await findTrackByIsrc(incoming.isrc);
-    if (isrcMatch) return isrcMatch;
-  }
-
-  if (trackData.url) {
-    const urlMatches = await queryDatabase({
-      property: NOTION_FIELDS.URL,
-      url: { equals: trackData.url },
-    });
-    if (urlMatches.length > 0) return urlMatches[0];
-  }
-
-  if (!trackData.title || !trackData.artist) return null;
-
-  const titleMatches = await queryDatabase({
-    property: NOTION_FIELDS.TRACK_TITLE,
-    title: { equals: trackData.title },
-  });
-  const normalizedArtist = normalizeText(trackData.artist);
-  const compatibleMatches = titleMatches.filter((page) => {
-    const existingArtist = page.properties[NOTION_FIELDS.ARTIST]?.rich_text?.[0]?.text?.content;
-    if (!existingArtist || normalizeText(existingArtist) !== normalizedArtist) return false;
-
-    const existing = identityFromNotionPage(page);
-    const conflictingIsrc = incoming.isrc && existing.isrc && incoming.isrc !== existing.isrc;
-    const conflictingPlatformId = incoming.platformTrackId
-      && existing.platformTrackId
-      && incoming.platformTrackId !== existing.platformTrackId;
-    return !conflictingIsrc && !conflictingPlatformId;
-  });
-
-  return compatibleMatches.find(
-    (page) => !page.properties[NOTION_FIELDS.REMOVED]?.checkbox
-  ) || compatibleMatches[0] || null;
+  // The final check must also see duplicate/contradictory identities, including
+  // legacy rows whose persisted IDs do not match their displayed URL. It uses
+  // the same decision as the in-memory index: platform track ID first, ISRC
+  // only as a cross-service hint when no page carries that platform ID.
+  const pages = await queryAllDatabase();
+  const decision = decideTrackMatch(trackData, pages);
+  if (decision.outcome === 'review') throw new TrackIdentityReviewError(decision);
+  return decision.outcome === 'match' ? decision.record : null;
 }
 
 /**
@@ -227,6 +249,7 @@ async function findTrackByIdentity(trackData) {
  * @returns {Promise<Object>} - Created page object
  */
 async function createTrack(trackData) {
+  assertWriteAllowed('createTrack');
   try {
     const properties = buildTrackProperties(trackData);
     
@@ -267,6 +290,7 @@ async function createTrack(trackData) {
  * @returns {Promise<Object>} - Updated page object
  */
 async function updateTrack(pageId, trackData) {
+  assertWriteAllowed('updateTrack');
   try {
     const properties = buildTrackProperties(trackData, true);
     
@@ -300,33 +324,13 @@ async function updateTrack(pageId, trackData) {
 }
 
 /**
- * Mark track as removed
+ * Legacy entry point: playlist removal must not change a global music flag.
  * @param {string} pageId - Page ID to mark as removed
  * @returns {Promise<Object>} - Updated page object
  */
 async function markTrackRemoved(pageId) {
-  try {
-    if (config.config.dryRun) {
-      logger.info('DRY RUN: Would mark track as removed', { pageId });
-      return { id: pageId };
-    }
-
-    // Notion Update Page: https://developers.notion.com/reference/patch-page
-    const response = await withNotionRetry('mark track removed', () => notion.pages.update({
-        page_id: pageId,
-        properties: {
-          [NOTION_FIELDS.REMOVED]: {
-            checkbox: true,
-          },
-        },
-      }), { mode: 'update' });
-
-    logger.info(`Marked track as removed`, { pageId });
-    return response;
-  } catch (error) {
-    logger.error(`Failed to mark track as removed ${pageId}: ${error.message}`, error);
-    throw error;
-  }
+  assertWriteAllowed('markTrackRemoved');
+  throw new Error('Global Removed updates are disabled; reconcile per-playlist membership instead');
 }
 
 /**
@@ -400,7 +404,7 @@ function buildTrackProperties(trackData, isUpdate = false) {
     };
   }
 
-  if (trackData.playlist) {
+  if (trackData.playlist && !isUpdate) {
     properties[NOTION_FIELDS.SOURCE] = {
       select: formatSelect(trackData.playlist),
     };
@@ -418,10 +422,8 @@ function buildTrackProperties(trackData, isUpdate = false) {
     };
   }
 
-  // Set removed to false for new/updated tracks
-  properties[NOTION_FIELDS.REMOVED] = {
-    checkbox: formatCheckbox(false),
-  };
+  // Source/Removed are creation-time legacy fields, never refreshed on updates.
+  if (!isUpdate) properties[NOTION_FIELDS.REMOVED] = { checkbox: formatCheckbox(false) };
 
   return properties;
 }
@@ -461,6 +463,7 @@ async function getPlaylistTracks(playlistName) {
  * @returns {Promise<Object>} - Created comment object
  */
 async function createPageComment(pageId, richTextBlocks) {
+  assertWriteAllowed('createPageComment');
   try {
     if (config.config.dryRun) {
       logger.info('DRY RUN: Would create page comment', { pageId, richTextBlocks });

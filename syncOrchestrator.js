@@ -12,23 +12,32 @@ const logger = require('./utils/logger');
 const spotifyClient = require('./spotifyClient');
 const appleMusicClient = require('./appleMusicClient');
 const notionClient = require('./notionClient');
+const membershipStore = require('./membershipStore');
+const { planPlaylistMemberships } = require('./utils/playlistMemberships');
 const { NOTION_FIELDS } = require('./schema');
 const { NotionOperationError } = require('./utils/notionRetry');
+const { TrackIdentityReviewError, trackFacts } = require('./utils/trackMatchDecision');
+const { runReadOnly } = require('./utils/mutationGuard');
 const {
   TrackIdentityIndex,
-  identityFromNotionPage,
-  identityFromTrackData,
 } = require('./utils/trackIdentity');
+const SYNC_POLICY_VERSION = 'playlist-membership-v1-library-retention';
 
 /**
  * Build the complete, run-scoped state used for matching and cleanup.
  * A failed or partial Notion read throws before any playlist is processed.
  * @returns {Promise<Object>}
  */
-async function createSyncContext() {
+async function createSyncContext(options = {}) {
+  const membershipState = await membershipStore.readState({ allowUninitialized: options.initializeMemberships === true });
   const notionPages = await notionClient.queryAllDatabase();
   return {
     notionPages,
+    membershipState,
+    shadow: options.shadow === true,
+    proposals: [],
+    memberships: new Map(),
+    playlistSnapshots: new Map(),
     identityIndex: TrackIdentityIndex.fromNotionPages(notionPages),
     currentPlaylistTracks: [],
     playlistFetchFailures: [],
@@ -40,7 +49,70 @@ async function createSyncContext() {
  * @returns {Promise<Object>}
  */
 async function ensureSyncContext(context) {
-  return context || createSyncContext();
+  const result = context || await createSyncContext();
+  result.proposals ||= [];
+  result.memberships ||= new Map();
+  result.playlistSnapshots ||= new Map();
+  result.currentPlaylistTracks ||= [];
+  result.playlistFetchFailures ||= [];
+  return result;
+}
+
+function addProposal(context, proposal) {
+  const key = JSON.stringify([proposal.kind, proposal.pageId, proposal.sourceId, proposal.reasons]);
+  if (!context.proposals.some(item => item.key === key)) context.proposals.push({ key, ...proposal });
+}
+
+async function readPlaylistSnapshot(service, playlistId, context) {
+  const key = service + ':' + playlistId;
+  if (context.playlistSnapshots.has(key)) return context.playlistSnapshots.get(key);
+  const client = service === 'spotify' ? spotifyClient : appleMusicClient;
+  if (!await client.checkServiceHealth()) throw new Error(service + ' service is not available');
+  const playlist = await client.getPlaylist(playlistId);
+  const tracks = await client.getPlaylistTracks(playlistId, { playlistName: playlist.name });
+  if (!Array.isArray(tracks)) throw new Error('Incomplete playlist snapshot: expected track array');
+  if (typeof playlist.trackCount === 'number' && tracks.length !== playlist.trackCount) {
+    throw new Error('Incomplete playlist snapshot: expected ' + playlist.trackCount + ' tracks, received ' + tracks.length);
+  }
+  const snapshot = { service, playlistId, playlist, tracks, complete: true, observedAt: new Date().toISOString() };
+  context.playlistSnapshots.set(key, snapshot);
+  const configured = config.getAllConfiguredPlaylists().find(item => item.service === service && item.id === playlistId);
+  context.currentPlaylistTracks.push(...tracks.map(track => ({
+    ...track, playlistId, playlistService: service,
+    playlist: (service === 'spotify' ? 'Spotify' : 'Apple Music') + ' - ' + playlist.name,
+    playlistType: configured?.type, type: configured?.type || track.type,
+  })));
+  return snapshot;
+}
+
+async function readAllPlaylistSnapshots(context) {
+  if (context.playlistReadsComplete) return;
+  const configured = config.getAllConfiguredPlaylists();
+  if (!configured.length) throw new Error('No configured playlists; membership cannot be determined');
+  for (const playlist of configured) {
+    try {
+      await readPlaylistSnapshot(playlist.service, playlist.id, context);
+    } catch (error) {
+      context.playlistFetchFailures.push({ service: playlist.service, playlistId: playlist.id, error: error.message });
+    }
+  }
+  if (context.playlistFetchFailures.length) {
+    throw new Error('Playlist snapshot incomplete; no sync actions are allowed: ' + context.playlistFetchFailures[0].error);
+  }
+  // Validate provider IDs and the membership inventory before any normal create.
+  planPlaylistMemberships(context.membershipState, [...context.playlistSnapshots.values()]);
+  context.playlistReadsComplete = true;
+}
+
+function recordMembership(context, pageId, trackData) {
+  const observations = context.memberships.get(pageId) || [];
+  const observation = {
+    service: trackData.source, sourceId: trackFacts(trackData).platformId,
+    playlistId: trackData.playlistId, playlistName: trackData.playlist,
+    type: trackData.playlistType || trackData.type,
+  };
+  if (!observations.some(item => JSON.stringify(item) === JSON.stringify(observation))) observations.push(observation);
+  context.memberships.set(pageId, observations);
 }
 
 /**
@@ -51,9 +123,9 @@ async function syncAllPlaylists(context) {
   const syncContext = await ensureSyncContext(context);
   const syncStart = Date.now();
   const summary = {
-    spotify: { added: 0, updated: 0, skipped: 0, errors: 0 },
-    appleMusic: { added: 0, updated: 0, skipped: 0, errors: 0 },
-    total: { processed: 0, successful: 0, skipped: 0, errors: 0 },
+    spotify: { added: 0, updated: 0, skipped: 0, review: 0, proposed: 0, errors: 0 },
+    appleMusic: { added: 0, updated: 0, skipped: 0, review: 0, proposed: 0, errors: 0 },
+    total: { processed: 0, successful: 0, skipped: 0, review: 0, proposed: 0, errors: 0 },
     newTracks: [],
     duration: 0,
     errors: []
@@ -68,6 +140,8 @@ async function syncAllPlaylists(context) {
   });
 
   try {
+    // Prove every configured playlist read complete before the first write.
+    await readAllPlaylistSnapshots(syncContext);
     // Sync all configured playlists
     for (const playlist of configuredPlaylists) {
       try {
@@ -95,17 +169,23 @@ async function syncAllPlaylists(context) {
             summary.spotify.updated += result.updated;
             summary.spotify.skipped += result.skipped;
             summary.spotify.errors += result.errors;
+            summary.spotify.review += result.review;
+            summary.spotify.proposed += result.proposed;
           } else if (playlist.service === 'appleMusic') {
             summary.appleMusic.added += result.added;
             summary.appleMusic.updated += result.updated;
             summary.appleMusic.skipped += result.skipped;
             summary.appleMusic.errors += result.errors;
+            summary.appleMusic.review += result.review;
+            summary.appleMusic.proposed += result.proposed;
           }
 
           summary.total.processed += result.added + result.updated;
           summary.total.successful += result.added + result.updated;
           summary.total.skipped += result.skipped;
           summary.total.errors += result.errors;
+          summary.total.review += result.review;
+          summary.total.proposed += result.proposed;
           summary.newTracks.push(...(result.newTracks || []));
         }
 
@@ -170,26 +250,11 @@ async function syncAllPlaylists(context) {
  */
 async function syncSpotifyPlaylist(playlistId, playlistType = 'Source', context) {
   const syncContext = await ensureSyncContext(context);
-  const results = { added: 0, updated: 0, skipped: 0, errors: 0, tracks: [], newTracks: [] };
+  const results = { added: 0, updated: 0, skipped: 0, review: 0, proposed: 0, errors: 0, tracks: [], newTracks: [] };
 
   try {
-    // Check Spotify service health
-    const isHealthy = await spotifyClient.checkServiceHealth();
-    if (!isHealthy) {
-      throw new Error('Spotify service is not available');
-    }
-
-    // Get playlist metadata
-    const playlist = await spotifyClient.getPlaylist(playlistId);
-    logger.info(`📋 Processing Spotify playlist: ${playlist.name}`, {
-      trackCount: playlist.trackCount,
-      playlistId: playlistId,
-      playlistType: playlistType
-    });
-
-    // Get all tracks from the playlist
-    const tracks = await spotifyClient.getPlaylistTracks(playlistId);
-    syncContext.currentPlaylistTracks.push(...tracks);
+    await readAllPlaylistSnapshots(syncContext);
+    const { playlist, tracks } = await readPlaylistSnapshot('spotify', playlistId, syncContext);
     
     // Process each track
     for (const track of tracks) {
@@ -198,7 +263,8 @@ async function syncSpotifyPlaylist(playlistId, playlistType = 'Source', context)
         const trackWithPlaylistInfo = {
           ...track,
           type: playlistType,
-          playlistType: playlistType
+          playlistType: playlistType,
+          playlistId
         };
         
         const result = await syncTrackToNotion(trackWithPlaylistInfo, syncContext);
@@ -216,10 +282,14 @@ async function syncSpotifyPlaylist(playlistId, playlistType = 'Source', context)
           results.updated++;
         } else if (result === 'skipped') {
           results.skipped++;
+        } else if (result === 'review') {
+          results.review++;
+        } else if (result === 'proposed') {
+          results.proposed++;
         }
         
         // Add small delay to respect rate limits
-        await new Promise(resolve => setTimeout(resolve, 100));
+        if (!syncContext.shadow) await new Promise(resolve => setTimeout(resolve, 100));
         
       } catch (error) {
         if (error instanceof NotionOperationError) {
@@ -264,26 +334,11 @@ async function syncSpotifyPlaylist(playlistId, playlistType = 'Source', context)
  */
 async function syncAppleMusicPlaylist(playlistId, playlistType = 'Source', context) {
   const syncContext = await ensureSyncContext(context);
-  const results = { added: 0, updated: 0, skipped: 0, errors: 0, tracks: [], newTracks: [] };
+  const results = { added: 0, updated: 0, skipped: 0, review: 0, proposed: 0, errors: 0, tracks: [], newTracks: [] };
 
   try {
-    // Check Apple Music service health
-    const isHealthy = await appleMusicClient.checkServiceHealth();
-    if (!isHealthy) {
-      throw new Error('Apple Music service is not available');
-    }
-
-    // Get playlist metadata
-    const playlist = await appleMusicClient.getPlaylist(playlistId);
-    logger.info(`📋 Processing Apple Music playlist: ${playlist.name}`, {
-      trackCount: playlist.trackCount,
-      playlistId: playlistId,
-      playlistType: playlistType
-    });
-
-    // Get all tracks from the playlist
-    const tracks = await appleMusicClient.getPlaylistTracks(playlistId);
-    syncContext.currentPlaylistTracks.push(...tracks);
+    await readAllPlaylistSnapshots(syncContext);
+    const { playlist, tracks } = await readPlaylistSnapshot('appleMusic', playlistId, syncContext);
     
     // Process each track
     for (const track of tracks) {
@@ -292,7 +347,8 @@ async function syncAppleMusicPlaylist(playlistId, playlistType = 'Source', conte
         const trackWithPlaylistInfo = {
           ...track,
           type: playlistType,
-          playlistType: playlistType
+          playlistType: playlistType,
+          playlistId
         };
         
         const result = await syncTrackToNotion(trackWithPlaylistInfo, syncContext);
@@ -310,10 +366,14 @@ async function syncAppleMusicPlaylist(playlistId, playlistType = 'Source', conte
           results.updated++;
         } else if (result === 'skipped') {
           results.skipped++;
+        } else if (result === 'review') {
+          results.review++;
+        } else if (result === 'proposed') {
+          results.proposed++;
         }
         
         // Add small delay to respect rate limits
-        await new Promise(resolve => setTimeout(resolve, 100));
+        if (!syncContext.shadow) await new Promise(resolve => setTimeout(resolve, 100));
         
       } catch (error) {
         if (error instanceof NotionOperationError) {
@@ -357,175 +417,118 @@ async function syncAppleMusicPlaylist(playlistId, playlistType = 'Source', conte
  */
 async function syncTrackToNotion(trackData, context) {
   const syncContext = await ensureSyncContext(context);
+  // Exported single-playlist/track entry points have the same preflight gate.
+  await readAllPlaylistSnapshots(syncContext);
   try {
-    // Use the complete snapshot first, then close the race with one final live
-    // identity lookup before creating a genuinely new record.
     let existingTrack = syncContext.identityIndex.find(trackData);
-    if (!existingTrack) {
+    if (!existingTrack && !syncContext.shadow) {
+      // This lookup uses the same conservative validator and propagates errors.
       existingTrack = await notionClient.findTrackByIdentity(trackData);
-      if (existingTrack) {
-        syncContext.identityIndex.addNotionPage(existingTrack);
-      }
+      if (existingTrack) syncContext.identityIndex.addNotionPage(existingTrack);
     }
-
     if (existingTrack) {
-      // Skip existing track to preserve manual edits
-      logger.debug(`Skipped existing track: ${trackData.title}`, {
-        pageId: existingTrack.id,
-        source: trackData.source,
-        reason: 'Preserving manual edits'
-      });
-      return 'skipped';
-    } else {
-      // Create new track
-      const newPage = await notionClient.createTrack(trackData);
-      syncContext.notionPages.push(newPage);
-      syncContext.identityIndex.addTrackData(trackData, newPage);
-      logger.debug(`Created new track: ${trackData.title}`, {
-        pageId: newPage.id,
-        source: trackData.source
-      });
-      return 'created';
+      recordMembership(syncContext, existingTrack.id, trackData);
+      if (trackFacts(existingTrack).removed) {
+        addProposal(syncContext, {
+          kind: 'review_reactivation', pageId: existingTrack.id,
+          sourceId: trackFacts(trackData).platformId,
+          reasons: ['present_in_current_playlist_but_legacy_removed'],
+          requiresApproval: true,
+        });
+        return 'review';
+      }
+      return 'skipped'; // Canonical and manually edited metadata stays intact.
     }
-
+    if (syncContext.shadow) {
+      const id = 'shadow:' + trackFacts(trackData).platformId;
+      const proposed = { id };
+      addProposal(syncContext, {
+        kind: 'create', pageId: id, sourceId: trackFacts(trackData).platformId,
+        track: trackData, requiresApproval: true,
+      });
+      syncContext.identityIndex.addTrackData(trackData, proposed);
+      recordMembership(syncContext, id, trackData);
+      return 'proposed';
+    }
+    const newPage = await notionClient.createTrack(trackData);
+    syncContext.notionPages.push(newPage);
+    syncContext.identityIndex.addTrackData(trackData, newPage);
+    recordMembership(syncContext, newPage.id, trackData);
+    return 'created';
   } catch (error) {
-    logger.error(`Failed to sync track to Notion: ${trackData.title}`, {
-      source: trackData.source,
-      sourceId: trackData.sourceId,
-      error: error.message
-    });
+    if (error instanceof TrackIdentityReviewError) {
+      addProposal(syncContext, {
+        kind: 'review_identity', sourceId: trackFacts(trackData).platformId,
+        track: trackData, reasons: error.decision.reasons,
+        candidates: error.decision.candidates.map(candidate => ({
+          pageId: candidate.recordId, reasons: candidate.reasons,
+          duration: candidate.duration, evidence: candidate.evidence,
+        })), requiresApproval: true,
+      });
+      return 'review';
+    }
     throw error;
   }
 }
 
 /**
- * Clean up removed tracks (mark tracks as removed if they're no longer in playlists)
+ * Reconcile per-playlist membership; legacy Removed/Source stay read-only.
  * @returns {Promise<Object>} - Cleanup results
  */
 async function cleanupRemovedTracks(context) {
   const syncContext = await ensureSyncContext(context);
-  const results = { marked: 0, errors: 0 };
-
-  try {
-    logger.info('🧹 Starting cleanup of removed tracks');
-
-    // Reuse the complete Notion snapshot from the beginning of this run.
-    const allNotionTracks = syncContext.notionPages.filter(
-      (page) => !page.properties?.[NOTION_FIELDS.REMOVED]?.checkbox
-    );
-
-    // Get current playlist tracks from all configured playlists
-    const configuredPlaylists = config.getAllConfiguredPlaylists();
-    if (syncContext.currentPlaylistTracks.length === 0 && configuredPlaylists.length > 0) {
-      for (const playlist of configuredPlaylists) {
-        try {
-          const tracks = playlist.service === 'spotify'
-            ? await spotifyClient.getPlaylistTracks(playlist.id)
-            : await appleMusicClient.getPlaylistTracks(playlist.id);
-          syncContext.currentPlaylistTracks.push(...tracks);
-        } catch (error) {
-          syncContext.playlistFetchFailures.push({
-            service: playlist.service,
-            playlistId: playlist.id,
-            error: error.message,
-          });
-        }
-      }
-    }
-
-    if (syncContext.playlistFetchFailures.length > 0) {
-      const failure = syncContext.playlistFetchFailures[0];
-      throw new Error(
-        `Cleanup aborted because the ${failure.service} playlist ${failure.playlistId} snapshot is incomplete: ${failure.error}`
-      );
-    }
-
-    // Create set of current track identifiers. A page counts as present only
-    // by platform track ID or ISRC; title/artist is not identity, so a
-    // different recording of the same song in a playlist no longer keeps a
-    // removed recording's page unflagged.
-    const currentTrackIds = new Set();
-    syncContext.currentPlaylistTracks.forEach(track => {
-      const identity = identityFromTrackData(track);
-      if (identity.platformTrackId) currentTrackIds.add(`platform:${identity.platformTrackId}`);
-      if (identity.isrc) currentTrackIds.add(`isrc:${identity.isrc}`);
+  await readAllPlaylistSnapshots(syncContext);
+  for (const track of syncContext.currentPlaylistTracks) {
+    const decision = syncContext.identityIndex.decide(track);
+    if (decision.outcome !== 'match') continue;
+    recordMembership(syncContext, decision.recordId, track);
+    if (decision.removed) addProposal(syncContext, {
+      kind: 'review_reactivation', pageId: decision.recordId,
+      sourceId: trackFacts(track).platformId,
+      reasons: ['present_in_current_playlist_but_legacy_removed'], requiresApproval: true,
     });
-
-    // Check each Notion track
-    for (const notionTrack of allNotionTracks) {
-      try {
-        const identity = identityFromNotionPage(notionTrack);
-        const title = notionTrack.properties[NOTION_FIELDS.TRACK_TITLE]?.title?.[0]?.text?.content;
-        const source = notionTrack.properties[NOTION_FIELDS.SOURCE]?.select?.name;
-
-        // Skip tracks that were manually added (Link Only or File Upload)
-        if (source === 'Link Only' || source === 'File Upload') {
-          logger.debug(`Skipping manually added track: ${title}`, {
-            source: source,
-            pageId: notionTrack.id
-          });
-          continue;
-        }
-
-        let trackExists = false;
-
-        // Check by platform track ID first, then ISRC. No title/artist fallback.
-        if (identity.platformTrackId
-          && currentTrackIds.has(`platform:${identity.platformTrackId}`)) {
-          trackExists = true;
-        }
-
-        if (!trackExists && identity.isrc && currentTrackIds.has(`isrc:${identity.isrc}`)) {
-          trackExists = true;
-        }
-
-        // Mark as removed if not found in current playlists
-        if (!trackExists) {
-          await notionClient.markTrackRemoved(notionTrack.id);
-          results.marked++;
-          logger.info(`Marked track as removed: ${title}`, {
-            pageId: notionTrack.id
-          });
-        }
-
-      } catch (error) {
-        if (error instanceof NotionOperationError) {
-          throw error;
-        }
-        results.errors++;
-        logger.error(`Failed to process track during cleanup`, {
-          pageId: notionTrack.id,
-          error: error.message
-        });
-      }
-    }
-
-    logger.info('🧹 Cleanup completed', {
-      tracksMarked: results.marked,
-      errors: results.errors
-    });
-
-    return results;
-
-  } catch (error) {
-    logger.error('Failed to cleanup removed tracks', {
-      error: error.message
-    });
-    throw error;
   }
+  const observations = [];
+  for (const page of syncContext.notionPages) {
+    const facts = trackFacts(page);
+    const historicalSource = page.properties?.[NOTION_FIELDS.SOURCE]?.select?.name || '';
+    const currentMemberships = syncContext.memberships.get(page.id) || [];
+    const state = currentMemberships.length ? 'present' : 'not_confirmed_in_monitored_playlists';
+    observations.push({
+      pageId: page.id, currentMemberships, state, historicalSource,
+      legacyRemoved: facts.removed,
+    });
+    // Existing Removed/Source fields cannot distinguish human exclusion from
+    // playlist absence. Report membership separately; never infer permission
+    // to erase an exclusion, recategorize the track, or mark it removed.
+  }
+  const associations = new Map();
+  for (const [pageId, memberships] of syncContext.memberships) {
+    for (const membership of memberships) {
+      const pages = associations.get(membership.sourceId) || [];
+      pages.push(pageId);
+      associations.set(membership.sourceId, pages);
+    }
+  }
+  const membershipPlan = planPlaylistMemberships(syncContext.membershipState, [...syncContext.playlistSnapshots.values()], associations);
+  const membershipCommit = membershipPlan.status !== 'unconfigured' && !syncContext.shadow && !config.config.dryRun
+    ? await membershipStore.commitPlan(membershipPlan)
+    : { committed: false };
+  return { marked: 0, errors: 0, observations, membershipPlan, membershipCommit,
+    mutationPolicy: 'per_playlist_memberships_only_legacy_fields_read_only' };
 }
 
 /**
  * Full sync with cleanup - the complete synchronization process
  * @returns {Promise<Object>} - Complete sync results
  */
-async function fullSync() {
+async function executeFullSync(options = {}) {
   const fullSyncStart = Date.now();
   
   try {
     logger.info('🚀 Starting full synchronization process');
 
-    const context = await createSyncContext();
+    const context = await createSyncContext(options);
 
     // Step 1: Sync all playlists
     const syncResults = await syncAllPlaylists(context);
@@ -539,7 +542,15 @@ async function fullSync() {
       sync: syncResults,
       cleanup: cleanupResults,
       totalDuration,
-      success: true
+      success: syncResults.total.errors === 0 && cleanupResults.errors === 0,
+      mode: options.shadow ? 'shadow' : 'sync',
+      syncPolicy: SYNC_POLICY_VERSION,
+      proposals: context.proposals,
+      observedPlaylists: [...context.playlistSnapshots.values()].map(snapshot => ({
+        service: snapshot.service, playlistId: snapshot.playlistId,
+        name: snapshot.playlist.name, trackCount: snapshot.tracks.length,
+      })),
+      writesSuppressed: options.shadow === true
     };
 
     logger.info('🎉 Full synchronization completed successfully', {
@@ -562,7 +573,22 @@ async function fullSync() {
   }
 }
 
+async function fullSync(options = {}) {
+  if (!options.shadow) return executeFullSync(options);
+  return runReadOnly(async () => {
+    try {
+      return await executeFullSync({ ...options, shadow: true });
+    } catch (error) {
+      return {
+        mode: 'shadow', success: false, blocked: true, writesSuppressed: true,
+        proposals: [], error: error.message,
+      };
+    }
+  });
+}
+
 module.exports = {
+  SYNC_POLICY_VERSION,
   createSyncContext,
   syncAllPlaylists,
   syncSpotifyPlaylist,

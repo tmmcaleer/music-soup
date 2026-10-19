@@ -1,16 +1,8 @@
 name: Music Soup Sync
 
 on:
-  # Manual trigger from GitHub UI
+  # Deprecated fallback: manual trigger only. Primary sync runs locally via launchd.
   workflow_dispatch:
-  
-  # Webhook trigger from Notion button
-  repository_dispatch:
-    types: [notion-sync]
-  
-  # Scheduled sync disabled - will use webhook triggers instead
-  # schedule:
-  #   - cron: '*/5 * * * *'
 
 jobs:
   sync-playlists:

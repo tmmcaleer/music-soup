@@ -66,9 +66,9 @@ function extractPlatformTrackId(value) {
 
     if (hostname === 'music.apple.com' || hostname.endsWith('.music.apple.com')) {
       const queryId = url.searchParams.get('i');
-      if (queryId) return `appleMusic:${queryId}`;
+      if (queryId && /^\d+$/.test(queryId)) return `appleMusic:${queryId}`;
 
-      const match = url.pathname.match(/\/(?:song|album)\/[^/]+\/(\d+)\/?$/);
+      const match = url.pathname.match(/\/song\/[^/]+\/(\d+)\/?$/);
       return match ? `appleMusic:${match[1]}` : '';
     }
   } catch {
@@ -152,88 +152,33 @@ function identityFromNotionPage(page) {
  */
 class TrackIdentityIndex {
   constructor() {
-    this.byIsrc = new Map();
-    this.byPlatformTrackId = new Map();
-    this.byTitleArtist = new Map();
+    this.records = [];
   }
 
-  /**
-   * @param {Object} page
-   * @returns {void}
-   */
   addNotionPage(page) {
-    this.addIdentity(identityFromNotionPage(page), page);
+    this.records.push(page);
   }
 
-  /**
-   * @param {Object} trackData
-   * @param {Object} record
-   * @returns {void}
-   */
   addTrackData(trackData, record) {
-    this.addIdentity(identityFromTrackData(trackData), record);
+    this.records.push({ ...trackData, id: record.id, _matchRecord: record });
   }
 
-  /**
-   * @param {{isrc: string, platformTrackId: string, titleArtist: string}} identity
-   * @param {Object} record
-   * @returns {void}
-   */
-  addIdentity(identity, record) {
-    if (identity.isrc && !this.byIsrc.has(identity.isrc)) {
-      this.byIsrc.set(identity.isrc, record);
-    }
-    if (identity.platformTrackId && !this.byPlatformTrackId.has(identity.platformTrackId)) {
-      this.byPlatformTrackId.set(identity.platformTrackId, record);
-    }
-    if (identity.titleArtist) {
-      const entries = this.byTitleArtist.get(identity.titleArtist) || [];
-      entries.push({ identity, record });
-      this.byTitleArtist.set(identity.titleArtist, entries);
-    }
+  decide(trackData) {
+    // Lazy import avoids a cycle with the pure normalizers above.
+    // decideTrackMatch checks the platform track ID before ISRC; ISRC and
+    // title are only consulted when no record carries the incoming platform ID.
+    return require('./trackMatchDecision').decideTrackMatch(trackData, this.records);
   }
 
-  /**
-   * @param {Object} trackData
-   * @returns {Object|null}
-   */
   find(trackData) {
-    const identity = identityFromTrackData(trackData);
-
-    // The platform track ID names one catalogue entry on one service. ISRC is
-    // only a cross-service hint: labels reuse one ISRC across different
-    // recordings and split one recording across several ISRCs, so it is
-    // consulted after the platform ID.
-    if (identity.platformTrackId && this.byPlatformTrackId.has(identity.platformTrackId)) {
-      return this.byPlatformTrackId.get(identity.platformTrackId);
+    const decision = this.decide(trackData);
+    if (decision.outcome === 'review') {
+      const { TrackIdentityReviewError } = require('./trackMatchDecision');
+      throw new TrackIdentityReviewError(decision);
     }
-
-    if (identity.isrc && this.byIsrc.has(identity.isrc)) {
-      return this.byIsrc.get(identity.isrc);
-    }
-
-    if (!identity.titleArtist) return null;
-
-    const candidates = this.byTitleArtist.get(identity.titleArtist) || [];
-    for (const candidate of candidates) {
-      const existing = candidate.identity;
-      const conflictingIsrc = identity.isrc && existing.isrc && identity.isrc !== existing.isrc;
-      const conflictingPlatformId = identity.platformTrackId
-        && existing.platformTrackId
-        && identity.platformTrackId !== existing.platformTrackId;
-
-      if (!conflictingIsrc && !conflictingPlatformId) {
-        return candidate.record;
-      }
-    }
-
-    return null;
+    return decision.outcome === 'match' ? decision.record : null;
   }
 
-  /**
-   * @param {Array<Object>} pages
-   * @returns {TrackIdentityIndex}
-   */
   static fromNotionPages(pages) {
     const index = new TrackIdentityIndex();
     for (const page of pages) index.addNotionPage(page);

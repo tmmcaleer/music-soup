@@ -48,11 +48,16 @@ Tracks removed from playlists are marked as "removed" in Notion rather than dele
 
 ## 🚀 Deployment
 
-### GitHub Actions
-- **Scheduled sync**: Configurable cron schedule (default: every 5 minutes)
-- **Manual triggers**: On-demand sync via GitHub UI
-- **Webhook support**: Integration with external systems via repository dispatch
-- **Secure secrets**: All API credentials stored in GitHub Secrets
+### Local scheduled sync (primary)
+- **Schedule**: 9:00 AM, 1:00 PM, and 6:00 PM via macOS launchd on the local host
+- **Runner**: `npm run sync:scheduled` in [`scripts/scheduled-sync.js`](scripts/scheduled-sync.js)
+- **Reporting**: posts a Notion page comment when new tracks are added
+- **Setup guide**: [`docs/local-cron-sync.md`](docs/local-cron-sync.md)
+
+### GitHub Actions (deprecated fallback)
+- **Manual triggers only**: optional on-demand sync via GitHub UI
+- **Webhook/Fly paths**: deprecated in favor of local scheduled sync
+- **Secure secrets**: API credentials can remain in GitHub Secrets until fully retired
 
 ### Environment Configuration
 All sensitive configuration managed through environment variables:
@@ -109,7 +114,7 @@ All sensitive configuration managed through environment variables:
 ### Runtime
 - **Node.js 18+** 
 - **Dependencies**: JWT handling, HTTP clients, logging utilities
-- **Environment**: GitHub Actions or any Node.js runtime environment
+- **Environment**: local macOS host with launchd, or any Node.js runtime environment
 
 ## 🎵 Use Cases
 

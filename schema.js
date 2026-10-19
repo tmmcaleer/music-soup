@@ -199,15 +199,17 @@ function formatDate(date) {
 }
 
 /**
- * Format duration in seconds to MM:SS format
+ * Format duration in seconds to M:SS.mmm without losing provider milliseconds.
  * @param {number} seconds - Duration in seconds
  * @returns {string|null} - Formatted duration or null
  */
 function formatDuration(seconds) {
-  if (!seconds || isNaN(seconds)) return null;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  const milliseconds = Math.round(Number(seconds) * 1000);
+  if (!Number.isSafeInteger(milliseconds) || milliseconds <= 0) return null;
+  const minutes = Math.floor(milliseconds / 60000);
+  const remainingSeconds = Math.floor(milliseconds % 60000 / 1000);
+  const fraction = milliseconds % 1000;
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}.${String(fraction).padStart(3, '0')}`;
 }
 
 /**
